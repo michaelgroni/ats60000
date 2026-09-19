@@ -132,7 +132,8 @@ class RemoteApp:
         for col_name, width in [("Slot", 50), ("Band", 80), ("Frequenz", 140), ("Modus", 60)]:
             self.memory_tree.heading(col_name, text=col_name)
             self.memory_tree.column(col_name, width=width)
-        self.memory_tree.pack(fill=tk.X, padx=4, pady=4)
+        self.memory_tree.grid(row=1, column=0, columnspan=5, sticky="we", padx=4, pady=4)
+        mem.columnconfigure(0, weight=1)
 
         # Screenshot
         shot = ttk.LabelFrame(outer, text="Display")
