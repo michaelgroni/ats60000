@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import socket
 import threading
+import time
 from typing import Callable
 
 from . import protocol
@@ -37,6 +38,26 @@ class RemoteClient:
         self._screenshot_lines: list[str] = []
         self._screenshot_target_rows = 0
         self._on_screenshot: Callable[[protocol.Screenshot], None] | None = on_screenshot
+        self._last_line_command = 0.0
+
+    def _send_guard(self, data: bytes) -> None:
+        """Vollständige Befehlszeilen vor dem Versand schützen.
+
+        Der Empfänger liest Zeilenbefehle ('F<hz>\\r\\n', '#slot,...\\r\\n')
+        Zeichen für Zeichen in blockierenden Schleifen (remoteReadInteger,
+        remoteReadString, expectNewline in der Firmware). Kommt der Rest
+        eines solchen Befehls erst mit dem nächsten TCP-Segment, wartet die
+        Firmware aktiv auf die fehlenden Zeichen. Damit der Empfänger nie
+        zwischen Befehlsanfang und -ende auf Daten warten muss, werden
+        Zeilenbefehle gepuffert und in einem einzigen write() übergeben und
+        vor jedem neuen Zeilenbefehl mindestens ein Intervall abgewartet.
+        """
+        if data[:1] in (b"F", b"#"):
+            now = time.monotonic()
+            wait = 0.05 - (now - self._last_line_command)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_line_command = time.monotonic()
 
     def request_screenshot(self) -> None:
         """Fordert einen Screenshot an; das Ergebnis geht an on_screenshot.
@@ -70,6 +91,9 @@ class RemoteClient:
             ) from exc
         self._sock = sock
         self._connected = True
+        # Nagle aktiv lassen: kleine Zeilenbefehle sollen gesammelt und als
+        # ein Segment übertragen werden (schützt die blockierenden Lese-
+        # schleifen der Firmware vor halben Befehlen).
         sock.settimeout(10.0)
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
@@ -91,6 +115,7 @@ class RemoteClient:
         sock = self._sock
         if sock is None or not self._connected:
             raise RuntimeError("Nicht verbunden")
+        self._send_guard(data)
         try:
             sock.sendall(data)
         except OSError as exc:

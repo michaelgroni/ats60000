@@ -24,6 +24,8 @@ class RemoteApp:
         )
         self._pending_memory: list[tuple[int, str, int, str]] = []
         self._screenshot: protocol.Screenshot | None = None
+        self._volume_target = 0
+        self._volume_job = None
 
         self._build_ui()
         root.after(200, self._poll_main_thread)
@@ -205,13 +207,22 @@ class RemoteApp:
         self.send(protocol.format_frequency_command(hz, ssb))
 
     def on_volume_changed(self, value: str):
-        target = int(float(value))
-        current = self._current_volume
-        if target == current or not self.client.is_connected():
+        # Nur den Zielpunkt merken; gesendet wird verzögert in _send_volume,
+        # damit schnelles Ziehen des Reglers keine Befehlsflut auslöst.
+        self._volume_target = int(float(value))
+        if self._volume_job is None:
+            self._volume_job = self.root.after(150, self._send_volume)
+
+    def _send_volume(self):
+        self._volume_job = None
+        if not self.client.is_connected():
             return
-        delta = target - current
-        command = protocol.CMD_VOLUME_UP if delta > 0 else protocol.CMD_VOLUME_DOWN
-        for _ in range(abs(delta)):
+        target = self._volume_target
+        current = self._current_volume
+        if target == current:
+            return
+        command = protocol.CMD_VOLUME_UP if target > current else protocol.CMD_VOLUME_DOWN
+        for _ in range(abs(target - current)):
             self.send(command)
 
     def show_memories(self):
