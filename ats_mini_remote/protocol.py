@@ -108,7 +108,18 @@ def parse_status(line: str) -> ReceiverStatus | None:
         capacitor = int(fields[_IDX_CAPACITOR])
         voltage = float(fields[_IDX_VOLTAGE])
         seqnum = int(fields[_IDX_SEQNUM])
-    except ValueError:
+    except (ValueError, OverflowError):
+        return None
+
+    # Werte aus dem Netzwerk begrenzen: Die UI rechnet mit ihnen
+    # (Frequenzumrechnung, Slider, Skalen) und darf weder auf Riesenzahlen
+    # noch auf Spezialwerte wie inf/nan treffen.
+    if not all(abs(v) <= 1_000_000_000 for v in
+               (version, frequency, bfo, cal, agc, volume, rssi, snr,
+                capacitor, seqnum)):
+        return None
+    if voltage != voltage or voltage in (float("inf"), float("-inf")) \
+            or abs(voltage) > 1000.0:
         return None
 
     return ReceiverStatus(
@@ -144,6 +155,11 @@ def parse_memory_line(line: str) -> tuple[int, str, int, str] | None:
         slot = int(fields[0])
         freq = int(fields[2])
     except ValueError:
+        return None
+    # Werte aus dem Netzwerk begrenzen (Firmware: 32 Slots)
+    if not 1 <= slot <= 32:
+        return None
+    if abs(freq) > 1_000_000_000:
         return None
     return slot, fields[1], freq, fields[3]
 
@@ -236,21 +252,32 @@ def s_meter(rssi: int, fm: bool) -> str:
     return ">S9+60"
 
 
+def _parse_step_or_step_size(text: str, default: int) -> int:
+    """Schrittweiten-Text ('10k', '1M', '25') in Hz; robust gegen
+    Muell aus dem Netzwerk: ungueltige oder unplatposter grosse Werte
+    fuehren zum Standardwert statt zu einer Ausnahme oder Riesenzahl."""
+    try:
+        value = text.strip().lower()
+        if value.endswith("m"):
+            hz = int(float(value[:-1]) * 1_000_000)
+        elif value.endswith("k"):
+            hz = int(float(value[:-1]) * 1000)
+        else:
+            hz = int(value)
+    except (ValueError, OverflowError):
+        return default
+    if not 1 <= hz <= 100_000_000:
+        return default
+    return hz
+
+
 def step_size_hz(status: "ReceiverStatus") -> int:
     """Wandelt das Schrittweiten-Feld des Monitor-Status in Hz um.
 
     FM/AM-Schritte sind wie '10k', '100k' oder '1M' formatiert,
     SSB-Schritte sind reine Zahlen in Hz ('25', '100').
     """
-    text = status.step.lower()
-    if text.endswith("k"):
-        return int(float(text[:-1]) * 1000)
-    if text.endswith("m"):
-        return int(float(text[:-1]) * 1_000_000)
-    try:
-        return int(text)
-    except ValueError:
-        return 1000
+    return _parse_step_or_step_size(status.step, 1000)
 
 
 def format_frequency_command(hz: int, ssb: bool) -> bytes:
@@ -376,13 +403,12 @@ def step_list(mode: str) -> list[str]:
 
 
 def step_hz(text: str) -> int:
-    """Schrittweiten-Text in Hz ('10k' -> 10000, '1M' -> 1000000)."""
-    value = text.strip().lower()
-    if value.endswith("m"):
-        return int(float(value[:-1]) * 1_000_000)
-    if value.endswith("k"):
-        return int(float(value[:-1]) * 1000)
-    return int(value)
+    """Schrittweiten-Text in Hz ('10k' -> 10000, '1M' -> 1000000).
+
+    Ungueltige Werte ergeben den AM-Standard 1 kHz; die Funktion wird
+    auch mit Texten aus dem Netzwerk gefuettert und darf nicht werfen.
+    """
+    return _parse_step_or_step_size(text, 1000)
 
 
 def step_steps(current: str, target: str, mode: str) -> bytes:
@@ -469,10 +495,19 @@ def bandwidth_list(mode: str) -> list[str]:
 
 
 def bandwidth_khz(text: str, fm: bool) -> float:
-    """Bandbreiten-Text in kHz ('Auto' -> 110.0 bei FM)."""
+    """Bandbreiten-Text in kHz ('Auto' -> 110.0 bei FM).
+
+    Ungueltige oder unmuetige Werte ergeben 6.0 kHz; der Text kann
+    aus einer manipulierten Statuszeile stammen.
+    """
     if text.lower() == "auto":
         return 110.0 if fm else 6.0
-    value = float(text.rstrip("kK"))
+    try:
+        value = float(text.rstrip("kK"))
+    except ValueError:
+        return 6.0
+    if not 0.0 < value <= 10_000.0:
+        return 6.0
     return value
 
 
@@ -655,7 +690,12 @@ def decode_screenshot(lines: list[str]) -> Screenshot:
     Höhe werden von der Firmware mit htonl() bzw. die Pixel mit htons()
     ausgegeben und sind daher im Stream big-endian codiert, die übrigen
     Headerfelder sind little-endian Literale.
+
+    Die Daten stammen aus dem Netzwerk und koennen manipuliert sein;
+    Gesamtlaenge und Bilddimensionen sind deshalb begrenzt.
     """
+    max_bytes = 2 * 1024 * 1024
+    max_dim = 4096
     hexdata = ""
     for line in lines:
         stripped = line.strip()
@@ -664,6 +704,8 @@ def decode_screenshot(lines: list[str]) -> Screenshot:
         if not all(c in "0123456789abcdefABCDEF" for c in stripped):
             raise ValueError("Ungültige Zeile in Screenshot-Daten")
         hexdata += stripped
+        if len(hexdata) > max_bytes * 2:
+            raise ValueError("Screenshot-Daten zu groß")
     raw = bytes.fromhex(hexdata)
     if len(raw) < 14 + 40 + 12:
         raise ValueError("Screenshot-Daten unvollständig")
@@ -687,6 +729,9 @@ def decode_screenshot(lines: list[str]) -> Screenshot:
         raise ValueError("Screenshot-Größe passt nicht zu den Daten")
     if (planes, bpp, compression, offset) != (1, 16, 3, 14 + 40 + 12):
         raise ValueError("Unerwartetes Screenshot-Format")
+
+    if not (1 <= width <= max_dim and 1 <= height <= max_dim):
+        raise ValueError("Screenshot-Auflösung außerhalb plausibler Grenzen")
 
     rowsize = width * 2
     if len(raw) < offset + rowsize * height:

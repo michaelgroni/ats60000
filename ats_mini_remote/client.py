@@ -135,6 +135,14 @@ class RemoteClient:
         if was_connected and self._on_disconnect is not None:
             self._on_disconnect(reason)
 
+    # Schutzbegrenzungen gegen boeswillige oder defekte Gegenseite:
+    # Zeilen niemals endlos anwachsen lassen, Screenshot-Sammlung
+    # nach Zeilenzahl/Bytes abbrechen. Ein CSV-Status ist ~100 Zeichen,
+    # eine Screenshot-Pixelzeile ~640 Hex-Zeichen (320 Byte/Zeile * 2).
+    _MAX_LINE_BYTES = 64 * 1024
+    _SCREENSHOT_MAX_ROWS = 4097          # Header + 4096 Pixelzeilen
+    _SCREENSHOT_MAX_LINE_CHARS = 16 * 1024
+
     def _read_loop(self) -> None:
         sock = self._sock
         if sock is None:
@@ -149,21 +157,45 @@ class RemoteClient:
                 while b"\n" in buf:
                     line, _, rest = buf.partition(b"\n")
                     buf = bytearray(rest)
+                    if len(line) > self._MAX_LINE_BYTES:
+                        self._handle_disconnect(
+                            "Verbindung wegen überlanger Zeile getrennt")
+                        return
                     text = line.rstrip(b"\r").decode("ascii", errors="replace")
                     self._process_line(text)
         except (OSError, ConnectionError) as exc:
             self._handle_disconnect(str(exc) or "Verbindung verloren")
 
+    def _abort_screenshot(self, reason: str) -> None:
+        """Screenshot-Sammlung abbrechen statt endlos Daten zu sammeln."""
+        self._collecting_screenshot = False
+        self._screenshot_lines = []
+        self._screenshot_target_rows = 0
+        if self._on_line is not None:
+            self._on_line(f"Screenshot abgebrochen: {reason}")
+
     def _process_line(self, text: str) -> None:
         if self._collecting_screenshot:
             if self._screenshot_target_rows == 0 and not text.strip():
+                return
+            if len(text) > self._SCREENSHOT_MAX_LINE_CHARS:
+                self._abort_screenshot("Zeile zu lang")
                 return
             self._screenshot_lines.append(text)
             if self._screenshot_target_rows == 0 and self._screenshot_lines:
                 header_hex = self._screenshot_lines[0].strip()
                 if len(header_hex) < (14 + 40 + 12) * 2:
+                    self._abort_screenshot("Header zu kurz")
                     return
-                height = int.from_bytes(bytes.fromhex(header_hex)[22:26], "big")
+                try:
+                    header = bytes.fromhex(header_hex)
+                except ValueError:
+                    self._abort_screenshot("Header kein Hex")
+                    return
+                height = int.from_bytes(header[22:26], "big")
+                if not 1 <= height <= self._SCREENSHOT_MAX_ROWS - 1:
+                    self._abort_screenshot("unplausible Bildhöhe")
+                    return
                 self._screenshot_target_rows = 1 + height
             if self._screenshot_target_rows and \
                     len(self._screenshot_lines) >= self._screenshot_target_rows:

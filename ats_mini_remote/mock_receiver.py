@@ -300,7 +300,7 @@ class MockHandler(socketserver.BaseRequestHandler):
         except ValueError:
             self.send(b"\r\nError: Invalid frequency\r\n")
             return
-        if hz <= 0:
+        if hz <= 0 or hz > 1_000_000_000:
             self.send(b"\r\nError: Invalid frequency\r\n")
             return
         if state.mode() == "FM":
@@ -326,6 +326,12 @@ class MockHandler(socketserver.BaseRequestHandler):
             freq = int(parts[2])
         except ValueError:
             self.send(b"\r\nError: Invalid memory slot number\r\n")
+            return
+        if not 1 <= slot <= 32:
+            self.send(b"\r\nError: Invalid memory slot number\r\n")
+            return
+        if abs(freq) > 1_000_000_000:
+            self.send(b"\r\nError: Invalid frequency\r\n")
             return
         band, mode = parts[1], parts[3]
         band_names = [b[0] for b in BANDS]
