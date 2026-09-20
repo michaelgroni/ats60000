@@ -195,6 +195,23 @@ class RemoteApp:
             ttk.Button(ctrl, text="▶", width=3,
                        command=up_cmd).grid(row=row, column=3, sticky="w")
 
+        # Quasianaloges S-Meter rechts neben den Steuerelementen;
+# Metrik per Radiobutton: RSSI, S-Wert oder SNR
+        meter = ttk.Frame(ctrl)
+        meter.grid(row=1, column=4, rowspan=len(rows), sticky="nsew",
+                   padx=(16, 4), pady=2)
+        self.smeter_metric_var = tk.StringVar(value="Signalstärke")
+        for i, m in enumerate(("Signalstärke", "S-Wert", "SNR")):
+            ttk.Radiobutton(meter, text=m, value=m,
+                            variable=self.smeter_metric_var,
+                            command=self._smeter_redraw).grid(
+                row=0, column=i, sticky="w", padx=2)
+        self.smeter_canvas = tk.Canvas(meter, width=260, height=54, bg="#000",
+                                       highlightthickness=0)
+        self.smeter_canvas.grid(row=1, column=0, columnspan=3,
+                               sticky="we", pady=(4, 2))
+        ctrl.columnconfigure(4, weight=1)
+
         # Speicher
         mem = ttk.LabelFrame(outer, text="Speicherplätze")
         mem.pack(fill=tk.X, **pad)
@@ -822,6 +839,79 @@ class RemoteApp:
         except ValueError:
             self.log("Frequenz außerhalb des Bands")
 
+    _SMETER_W = 260
+    _SMETER_H = 54
+    _SMETER_BAR_H = 14
+    _SMETER_BG = "#000"
+    _SMETER_FG = "#0f0"
+    _SMETER_TXT = "#ccc"
+    _SMETER_TICK = "#888"
+
+    def _smeter_value(self, status) -> tuple[float, str, list[str]]:
+        """Metrik-abhaengiger Anzeigewert: (0..1, Text, Tick-Labels)."""
+        metric = self.smeter_metric_var.get()
+        if metric == "S-Wert":
+            # S-Wert 0..9+60 -> 0..1; Ticks S1..S9
+            s = protocol.s_meter(status.rssi, status.mode.upper() == "FM")
+            num = 0.0
+            if s.startswith("S"):
+                body = s[1:].split("+")[0]
+                try:
+                    num = int(body) / 9.0
+                except ValueError:
+                    num = 1.0
+            elif ">" in s:
+                num = 1.0
+            if "+" in s:
+                try:
+                    over = int(s.split("+")[1])
+                    num = (9 + over / 60) / (9 + 60 / 60)
+                except (IndexError, ValueError):
+                    num = 1.0
+            return num, s, [f"S{i}" for i in range(1, 10)]
+        if metric == "SNR":
+            # SNR 0..60 dB -> 0..1; Ticks alle 15 dB
+            v = max(0.0, min(status.snr, 60.0)) / 60.0
+            text = f"{status.snr:.0f} dB"
+            return v, text, ["0", "15", "30", "45", "60"]
+        # Signalstärke: RSSI 0..127 dBuV -> 0..1; Ticks alle 20 dB
+        v = max(0.0, min(status.rssi, 127.0)) / 127.0
+        return v, f"{status.rssi} dBµV", [str(t) for t in range(20, 128, 20)]
+
+    def _smeter_redraw(self):
+        """S-Meter neu zeichnen: Balken, Skala und Wert je Metrik."""
+        canvas = self.smeter_canvas
+        canvas.delete("all")
+        w = self._SMETER_W
+        h = self._SMETER_H
+        pad_l = 34
+        pad_r = 44
+        bar_y = h - 30
+        bar_h = self._SMETER_BAR_H
+        bar_w = w - pad_l - pad_r
+        canvas.create_line(pad_l, bar_y - 4, pad_l, bar_y + bar_h + 2,
+                           fill=self._SMETER_TICK)
+        status = self._last_status
+        value, text, ticks = 0.0, "–", []
+        if status is not None:
+            value, text, ticks = self._smeter_value(status)
+        # Skala: Ticks mit Label ueber dem Balken
+        for i, label in enumerate(ticks):
+            x = pad_l + i / max(len(ticks) - 1, 1) * bar_w
+            canvas.create_line(x, bar_y - 4, x, bar_y - 1,
+                               fill=self._SMETER_TICK)
+            canvas.create_text(x, bar_y - 6, text=label, anchor="s",
+                               font=("", 6), fill=self._SMETER_TXT)
+        # Balken vom linken Rand bis zum Wert
+        value = max(0.0, min(value, 1.0))
+        bar_x = pad_l + value * bar_w
+        canvas.create_rectangle(pad_l, bar_y, bar_x, bar_y + bar_h,
+                                fill=self._SMETER_FG, outline="")
+        # Balkerweiterung: Wert in der Mitte des Balkens ausgeben
+        mid = pad_l + max(bar_w // 2, 1)
+        canvas.create_text(mid, bar_y + bar_h // 2, text=text,
+                           font=("", 8, "bold"), fill="#000" if value > 0.5 else self._SMETER_TXT)
+
     def _set_row_values(self, status: protocol.ReceiverStatus):
         """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
         vars_ = self._row_value_vars
@@ -1025,6 +1115,7 @@ class RemoteApp:
             self.snr_var.set(f"{status.snr} dB")
             self.batt_var.set(f"{status.voltage:.2f} V")
             self._set_row_values(status)
+            self._smeter_redraw()
             # Frequenzmarke im Spektrum nachziehen, wenn die Frequenz
             # geaendert wurde (ausserhalb des Sweeps, der selbst zeichnet).
             # Ohne Spektrumdaten werden Achsen und Marke aus dem aktuellen

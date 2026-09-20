@@ -84,7 +84,7 @@ def make_tkinter_mock():
     setattr(ttk, "Frame", FakeFrame)
     setattr(ttk, "LabelFrame", FakeFrame)
     for name in ["Label", "Button", "Entry",
-                 "Combobox", "Spinbox", "Scale", "Treeview"]:
+                 "Combobox", "Spinbox", "Scale", "Treeview", "Radiobutton"]:
         setattr(ttk, name, FakeWidget)
     mod.ttk = ttk
 
@@ -225,6 +225,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._sweep_restore_freq = None
         application._sweep_mode = "LSB"
         application.sweep_canvas = FakeCanvas()
+        application.smeter_canvas = FakeCanvas()
+        application.smeter_metric_var = FakeVar()
+        application.smeter_metric_var.value = "Signalstärke"
         application.volume_var = FakeVar()
         application.freq_var = FakeVar()
         application.band_var = FakeVar()
@@ -314,6 +317,52 @@ class SpectrumMarkerTest(unittest.TestCase):
         unit = [t for t in canvas.texts if t[1].get("text") == "kHz"][0]
         last_tick_x = max(t[0][0] for t in freq_ticks)
         self.assertGreater(unit[0][0], last_tick_x)
+
+    def test_smeter_draws_bar_and_value(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M",
+            rssi=64, snr=30)
+        # Signalstärke: Balken proportional zu 64/127
+        app._smeter_redraw()
+        rects = [r for r in app.smeter_canvas.rectangles
+                 if r[1].get("fill") == "#0f0"]
+        self.assertEqual(len(rects), 1)
+        self.assertEqual(rects[0][1].get("fill"), "#0f0")
+        texts = [t[1].get("text") for t in app.smeter_canvas.texts]
+        self.assertIn("64 dBµV", texts)
+        # S-Wert-Metrik: Skala S1..S9, Text ist der S-Wert
+        app.smeter_metric_var.value = "S-Wert"
+        app._smeter_redraw()
+        texts = [t[1].get("text") for t in app.smeter_canvas.texts]
+        self.assertIn("S9+20", texts)   # 64 dBuV HF -> S9+20
+        self.assertIn("S9", texts)      # Tick-Label
+        # SNR-Metrik: Ticks 0/15/30/45/60, Text in dB
+        app.smeter_metric_var.value = "SNR"
+        app._smeter_redraw()
+        texts = [t[1].get("text") for t in app.smeter_canvas.texts]
+        self.assertIn("30 dB", texts)
+        self.assertIn("45", texts)
+
+    def test_smeter_bar_scales_with_metric(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M",
+            rssi=64, snr=30)
+        app._smeter_redraw()
+        bar_rssi = [r for r in app.smeter_canvas.rectangles
+                    if r[1].get("fill") == "#0f0"][0][0]
+        app.smeter_metric_var.value = "SNR"
+        app._smeter_redraw()
+        bar_snr = [r for r in app.smeter_canvas.rectangles
+                   if r[1].get("fill") == "#0f0"][0][0]
+        # RSSI 64/127 ≈ 0.504 vs SNR 30/60 = 0.5: SNR-Balken minimal kuerzer
+        self.assertAlmostEqual(bar_rssi[2] - bar_rssi[0],
+                               (64 / 127) * (260 - 34 - 44), delta=1)
+        self.assertAlmostEqual(bar_snr[2] - bar_snr[0],
+                               (30 / 60) * (260 - 34 - 44), delta=1)
 
     def test_click_snaps_to_step(self):
         from ats_mini_remote import protocol
