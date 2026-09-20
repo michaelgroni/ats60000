@@ -452,18 +452,20 @@ class SpectrumMarkerTest(unittest.TestCase):
         fills = [p for p in canvas.polygons
                  if p[1].get("fill") == "#0f0"]
         self.assertGreaterEqual(len(fills), 1)
-        # ohne Daten wird beim Resize nicht gezeichnet
-        canvas.deleted = 0
-        app._sweep_data = None
-        app._sweep_on_resize(None)
-        self.assertEqual(canvas.deleted, 0)
 
-    def test_no_draw_without_spectrum_data(self):
+    def test_axes_drawn_without_spectrum_data(self):
         app = self._make_app()
         app._sweep_data = None
+        app._sweep_freq_range = None
+        # ohne Daten: Achsen und Marke aus dem aktuellen Band (80M)
         app._pending_status = self._status(3_600)
         app._poll_main_thread()
-        self.assertEqual(len(app.sweep_canvas.lines), 0)
+        self.assertGreater(len(app.sweep_canvas.lines), 0)
+        self.assertEqual(len(self._markers(app.sweep_canvas)), 1)
+        texts = [t[1].get("text") for t in app.sweep_canvas.texts]
+        self.assertIn("dBµV", texts)
+        # keine Messflaechen ohne Daten
+        self.assertEqual(len(app.sweep_canvas.polygons), 0)
 
     def test_no_draw_during_sweep(self):
         app = self._make_app()

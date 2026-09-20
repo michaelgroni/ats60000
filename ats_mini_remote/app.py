@@ -90,6 +90,7 @@ class RemoteApp:
         self._sweep_peak: dict[int, int] = {}
         self._sweep_ema: dict[int, int] = {}
         self._sweep_prev: dict[int, int] = {}
+        self._sweep_axes_band: str = ""
 
         self._build_ui()
         root.after(50, self._poll_main_thread)
@@ -593,9 +594,9 @@ class RemoteApp:
     _SWEEP_AXIS_MIN = 60       # dBuV: kleineres Achsenmaximum nie sinnvoll
     _sweep_axis_max = 60       # aktuell gezeichnetes Achsenmaximum
     _SWEEP_PAD_L = 28         # Platz fuer die dBuV-Achse links (schmal)
-    _SWEEP_PAD_R = 34         # Platz rechts: letzte Frequenz wird nicht abgeschnitten
+    _SWEEP_PAD_R = 36         # Platz rechts: Frequenzen und Einheit unten rechts
     _SWEEP_PAD_B = 16         # Platz fuer die Frequenzachse unten
-    _SWEEP_PAD_T = 14         # Platz oben: Einheit und oberster Tick am Rand
+    _SWEEP_PAD_T = 20         # Platz oben: Einheit ueber der Achsenspitze
     _SWEEP_TICK_FONT = ("", 7)
 
     def _sweep_scale_max(self) -> int:
@@ -629,10 +630,10 @@ class RemoteApp:
             canvas.create_line(pad_l - 3, y, pad_l, y, fill="#888")
             canvas.create_text(pad_l - 5, y, text=str(rssi), anchor="e",
                                font=self._SWEEP_TICK_FONT, fill="#ccc")
-        # Einheit der dBuV-Achse oben links, sichtbar im Canvas
         canvas.create_line(pad_l, pad_t, pad_l, base_y, fill="#888")
-        canvas.create_text(pad_l - 5, pad_t, text="dBµV",
-                           anchor="sw", font=self._SWEEP_TICK_FONT, fill="#ccc")
+        # Einheit links oberhalb der Achsenspitze
+        canvas.create_text(pad_l - 5, pad_t - 7, text="dBµV",
+                           anchor="se", font=self._SWEEP_TICK_FONT, fill="#ccc")
 
         # Frequenzachse unten: 5 Ticks, Einheit nach Spanne (MHz/kHz)
         span = plot.span
@@ -647,8 +648,9 @@ class RemoteApp:
             text = f"{value:.2f}" if value < 100 else f"{value:.1f}"
             canvas.create_text(x, base_y + 5, text=text, anchor="n",
                                font=self._SWEEP_TICK_FONT, fill="#ccc")
-        canvas.create_text(pad_l + plot.plot_w, pad_t - 2, text=unit,
-                           anchor="ne", font=self._SWEEP_TICK_FONT, fill="#ccc")
+        # Einheit rechts unterhalb der Achsenspitze
+        canvas.create_text(pad_l + plot.plot_w + 10, base_y + 5, text=unit,
+                           anchor="nw", font=self._SWEEP_TICK_FONT, fill="#ccc")
 
     def _sweep_draw_marker(self, plot: _SweepPlot):
         """Eingestellte Frequenz als vertikale Markierung; waehrend des
@@ -682,21 +684,46 @@ class RemoteApp:
             x1, y1, x2, y2, x2, plot.base_y, x1, plot.base_y,
             fill=color, outline="")
 
+    def _sweep_range_or_band(self) -> tuple[int, int] | None:
+        """Frequenzbereich fuer die Achsen: Sweep-Bereich, sonst aktuelles
+        Band laut letztem Status -- Achsen sind damit auch ohne
+        Spektrumdaten sichtbar."""
+        if self._sweep_freq_range is not None:
+            return self._sweep_freq_range
+        status = self._last_status
+        if status is None:
+            return None
+        rng = protocol.sweep_points_for_band(
+            status.band, status.mode, status.display_frequency_hz())
+        if rng is None:
+            return None
+        return int(rng[0]) * 1000, int(rng[1]) * 1000
+
     def _sweep_draw(self):
         """Alles zeichnen: nach Sweep-Ende, Band- oder Frequenzwechsel.
 
-        Achsenmaximum dynamisch aus den Messwerten, dann durchgehende
-        Flaeche: zwischen allen Punkten (gemessen oder interpoliert)
-        wird je ein Trapez bis zur Basislinie gefuellt.
+        Ohne Spektrumdaten werden nur Achsen und Frequenzmarke gezeigt
+        (Bereich aus dem aktuellen Band). Mit Daten: Achsenmaximum
+        dynamisch aus den Messwerten, dann durchgehende Flaeche --
+        zwischen allen Punkten (gemessen oder interpoliert) wird je ein
+        Trapez bis zur Basislinie gefuellt.
         """
         data = self._sweep_data
-        if not data:
-            return
-        self._sweep_axis_max = self._sweep_scale_max()
         canvas = self.sweep_canvas
         canvas.delete("all")
-        plot = self._sweep_plot()
+        rng = self._sweep_range_or_band()
+        if rng is None:
+            return
+        if data:
+            self._sweep_axis_max = self._sweep_scale_max()
+        plot = _SweepPlot(self.sweep_canvas, rng,
+                          self._SWEEP_PAD_L, self._SWEEP_PAD_R,
+                          self._SWEEP_PAD_B, self._SWEEP_PAD_T,
+                          self._sweep_axis_max)
         self._sweep_draw_frame(plot)
+        if not data:
+            self._sweep_draw_marker(plot)
+            return
         measured = dict(data)
         freqs_all = self._sweep_freqs or [hz for hz, _ in data]
         values: list[tuple[int, int]] = []
@@ -759,8 +786,7 @@ class RemoteApp:
     def _sweep_on_resize(self, event):
         """Bei Groessenaenderung neu zeichnen: das Spektrum passt sich
         der neuen Canvas-Breite an (Achsen, Flaechen, Marke)."""
-        if self._sweep_data:
-            self._sweep_draw()
+        self._sweep_draw()
 
     def _sweep_click(self, event):
         """Klick im Diagramm: zur angeklickten Frequenz tunen."""
@@ -987,11 +1013,20 @@ class RemoteApp:
             self.batt_var.set(f"{status.voltage:.2f} V")
             self._set_row_values(status)
             # Frequenzmarke im Spektrum nachziehen, wenn die Frequenz
-            # geaendert wurde (ausserhalb des Sweeps, der selbst zeichnet)
-            if (not self._sweep_active and self._sweep_data
-                    and hz != self._sweep_marker_hz):
-                self._sweep_marker_hz = hz
-                self._sweep_draw()
+            # geaendert wurde (ausserhalb des Sweeps, der selbst zeichnet).
+            # Ohne Spektrumdaten werden Achsen und Marke aus dem aktuellen
+            # Band gezeichnet (initial und nach Band-/Frequenzwechsel).
+            if not self._sweep_active:
+                redraw = False
+                if self._sweep_data:
+                    redraw = hz != self._sweep_marker_hz
+                else:
+                    redraw = (hz != self._sweep_marker_hz
+                              or status.band != self._sweep_axes_band)
+                    self._sweep_axes_band = status.band
+                if redraw:
+                    self._sweep_marker_hz = hz
+                    self._sweep_draw()
 
         shot = getattr(self, "_pending_screenshot", None)
         if shot is not None:
@@ -1019,6 +1054,7 @@ class RemoteApp:
     _sweep_restore_freq: int | None = None
     _sweep_mode: str = ""
     _sweep_marker_hz: int | None = None
+    _sweep_axes_band: str = ""
     _sweep_peak: dict[int, int] = {}
     _sweep_ema: dict[int, int] = {}
     _sweep_prev: dict[int, int] = {}
