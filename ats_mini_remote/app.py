@@ -9,6 +9,37 @@ from . import protocol
 from .client import RemoteClient
 
 
+def _interp_rssi(freqs: list[int], measured: dict[int, int],
+                 hz: int) -> int | None:
+    """RSSI eines fehlenden Punkts linear zwischen Nachbarn interpolieren.
+
+    Gesucht sind die naechsten gemessenen Punkte links und rechts der
+    Frequenz; liegt nur einer davon vor (Randbereich), wird dessen Wert
+    uebernommen. Ohne jeden Messwert: None (nicht zeichenbar).
+    """
+    idx = freqs.index(hz)
+    left = None
+    for j in range(idx - 1, -1, -1):
+        if freqs[j] in measured:
+            left = j
+            break
+    right = None
+    for j in range(idx + 1, len(freqs)):
+        if freqs[j] in measured:
+            right = j
+            break
+    if left is None and right is None:
+        return None
+    if left is None:
+        return measured[freqs[right]]
+    if right is None:
+        return measured[freqs[left]]
+    lo_rssi = measured[freqs[left]]
+    hi_rssi = measured[freqs[right]]
+    frac = (hz - freqs[left]) / (freqs[right] - freqs[left])
+    return round(lo_rssi + (hi_rssi - lo_rssi) * frac)
+
+
 class RemoteApp:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -118,11 +149,12 @@ class RemoteApp:
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
                 up_cmd = (lambda c=up: lambda: self.send(c))()
+            ttk.Label(ctrl, text=label, width=12).grid(
+                row=row, column=0, sticky="w", padx=4)
             ttk.Button(ctrl, text="◀", width=3,
-                       command=down_cmd).grid(row=row, column=0, sticky="w", padx=4, pady=2)
+                       command=down_cmd).grid(row=row, column=1, sticky="w", padx=2, pady=2)
             value_var = tk.StringVar(value="–")
             self._row_value_vars[label] = value_var
-            ttk.Label(ctrl, text=label, width=12).grid(row=row, column=1, sticky="w", padx=4)
             ttk.Label(ctrl, textvariable=value_var, width=12,
                       font=("", 9, "bold")).grid(row=row, column=2, sticky="w", padx=8)
             ttk.Button(ctrl, text="▶", width=3,
@@ -165,7 +197,7 @@ class RemoteApp:
         self.sweep_progress_var = tk.StringVar(value="")
         ttk.Label(sweep, textvariable=self.sweep_progress_var).grid(
             row=0, column=4, padx=8)
-        self.sweep_canvas = tk.Canvas(sweep, height=120, bg="#000",
+        self.sweep_canvas = tk.Canvas(sweep, height=140, bg="#000",
                                       highlightthickness=0)
         self.sweep_canvas.grid(row=1, column=0, columnspan=5, sticky="we",
                                padx=4, pady=(0, 4))
@@ -491,22 +523,89 @@ class RemoteApp:
         self.log(f"Sweep {self._sweep_message}: "
                  f"{len(self._sweep_data or [])} Punkte")
 
+    _SWEEP_RSSI_MAX = 127      # RSSI-Skala des Empfaengers (dBuV)
+    _SWEEP_PAD_L = 36         # Platz fuer die dBuV-Achse links
+    _SWEEP_PAD_B = 16         # Platz fuer die Frequenzachse unten
+    _SWEEP_PAD_T = 4
+    _SWEEP_TICK_FONT = ("", 7)
+
     def _sweep_draw(self):
         data = self._sweep_data
         if not data:
             return
         canvas = self.sweep_canvas
         canvas.delete("all")
-        width = max(canvas.winfo_width(), 100)
-        height = 120
+        cw = max(canvas.winfo_width(), 100)
+        ch = max(int(canvas.cget("height")), 100)
+        pad_l = self._SWEEP_PAD_L
+        pad_b = self._SWEEP_PAD_B
+        pad_t = self._SWEEP_PAD_T
+        plot_w = max(cw - pad_l - 2, 10)
+        plot_h = max(ch - pad_b - pad_t - 2, 10)
+        base_y = pad_t + plot_h
         lo, hi = self._sweep_freq_range
         span = max(hi - lo, 1)
-        rssi_max = 127
-        for hz, rssi in data:
-            x = (hz - lo) / span * width
-            y = height - 4 - (rssi / rssi_max) * (height - 8)
-            canvas.create_rectangle(x - 1, y, x + 1, height - 4,
-                                   fill="#0f0", outline="")
+        rssi_max = self._SWEEP_RSSI_MAX
+
+        def fx(hz):
+            return pad_l + (hz - lo) / span * plot_w
+
+        def fy(rssi):
+            return base_y - (rssi / rssi_max) * plot_h
+
+        # dBuV-Achse links: Ticks alle 20 dB, 0 unten bis 127 oben
+        for rssi in range(0, rssi_max + 1, 20):
+            y = fy(rssi)
+            canvas.create_line(pad_l - 3, y, pad_l, y, fill="#888")
+            canvas.create_text(pad_l - 5, y, text=str(rssi), anchor="e",
+                               font=self._SWEEP_TICK_FONT, fill="#ccc")
+        canvas.create_line(pad_l, pad_t, pad_l, base_y, fill="#888")
+        canvas.create_text(pad_l - 5, pad_t - 2, text="dBµV",
+                          anchor="se", font=self._SWEEP_TICK_FONT, fill="#ccc")
+
+        # Frequenzachse unten: 5 Ticks, Einheit nach Spanne (MHz/kHz)
+        unit = "MHz" if span >= 2_000_000 else "kHz"
+        scale = 1_000_000 if unit == "MHz" else 1_000
+        canvas.create_line(pad_l, base_y, pad_l + plot_w, base_y, fill="#888")
+        for i in range(5):
+            hz = lo + i * span / 4
+            x = fx(hz)
+            canvas.create_line(x, base_y, x, base_y + 3, fill="#888")
+            value = hz / scale
+            text = f"{value:.2f}" if value < 100 else f"{value:.1f}"
+            canvas.create_text(x, base_y + 5, text=text, anchor="n",
+                               font=self._SWEEP_TICK_FONT, fill="#ccc")
+        canvas.create_text(pad_l + plot_w, pad_t - 2, text=unit,
+                           anchor="ne", font=self._SWEEP_TICK_FONT, fill="#ccc")
+
+        # Messpunkte als helle Balken; geplante, aber nicht gemessene
+        # Punkte (Radio hat die Frequenz nicht bestätigt, z. B. Rundung am
+        # Bandrand) werden zwischen den naechsten gemessenen Nachbarn
+        # linear interpoliert und als dunkle Balken gezeichnet -- die
+        # Kurve hat damit keine Luecken, der Unterschied bleibt erkennbar.
+        measured = dict(data)
+        freqs_all = self._sweep_freqs or [hz for hz, _ in data]
+        xs: list[float] = []
+        ys: list[float] = []
+        for hz in freqs_all:
+            x = fx(hz)
+            if hz in measured:
+                y = fy(measured[hz])
+                canvas.create_rectangle(x - 1, y, x + 1, base_y,
+                                        fill="#0f0", outline="")
+            else:
+                rssi = _interp_rssi(freqs_all, measured, hz)
+                if rssi is None:
+                    continue
+                y = fy(rssi)
+                canvas.create_rectangle(x - 1, y, x + 1, base_y,
+                                        fill="#060", outline="")
+            xs.append(x)
+            ys.append(y)
+        if len(xs) >= 2:
+            canvas.create_line(*[c for p in zip(xs, ys) for c in p],
+                                fill="#0a0", width=1)
+
         # Eingestellte Frequenz als vertikale Markierung; waehrend des
         # Sweeps ist das die Restore-Frequenz, da das Radio gerade das
         # Band durchfaehrt.
@@ -516,8 +615,8 @@ class RemoteApp:
             status = self._last_status
             current_hz = status.display_frequency_hz() if status else None
         if current_hz is not None and lo <= current_hz <= hi:
-            x = (current_hz - lo) / span * width
-            canvas.create_line(x, 2, x, height - 4,
+            x = fx(current_hz)
+            canvas.create_line(x, pad_t, x, base_y,
                                fill="#f80", width=2)
 
     def _sweep_click(self, event):
@@ -528,8 +627,10 @@ class RemoteApp:
         lo, hi = self._sweep_freq_range
         span = max(hi - lo, 1)
         canvas = self.sweep_canvas
-        width = max(canvas.winfo_width(), 100)
-        hz = lo + event.x / width * span
+        cw = max(canvas.winfo_width(), 100)
+        pad_l = self._SWEEP_PAD_L
+        plot_w = max(cw - pad_l - 2, 10)
+        hz = lo + (event.x - pad_l) / plot_w * span
         hz = int(round((hz // 1000) * 1000))
         status = self._last_status
         ssb = status.mode in ("LSB", "USB") if status else False

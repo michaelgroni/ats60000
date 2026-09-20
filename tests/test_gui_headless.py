@@ -131,8 +131,10 @@ class FakeCanvas:
     def __init__(self):
         self.lines = []
         self.rectangles = []
+        self.texts = []
         self.deleted = 0
         self.width = 300
+        self.height = 140
 
     def delete(self, *a, **kw):
         self.deleted += 1
@@ -140,11 +142,17 @@ class FakeCanvas:
     def winfo_width(self):
         return self.width
 
+    def cget(self, key):
+        return str(self.height) if key == "height" else ""
+
     def create_rectangle(self, *a, **kw):
         self.rectangles.append((a, kw))
 
     def create_line(self, *a, **kw):
         self.lines.append((a, kw))
+
+    def create_text(self, *a, **kw):
+        self.texts.append((a, kw))
 
 
 class FakeVar:
@@ -204,6 +212,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._sweep_timeout_id = None
         application._last_status = None
         application._sweep_data = [(3_500_000, 10), (3_600_000, 20)]
+        application._sweep_freqs = [3_500_000, 3_600_000]
         application._sweep_freq_range = (3_500_000, 4_000_000)
         application._sweep_marker_hz = None
         application._sweep_restore_freq = None
@@ -229,22 +238,54 @@ class SpectrumMarkerTest(unittest.TestCase):
         from ats_mini_remote import protocol
         return protocol.ReceiverStatus(frequency=khz, mode="LSB", band="80M")
 
+    @staticmethod
+    def _markers(canvas):
+        """Nur die orangen Frequenzmarken zaehlen (nicht Achsen/Ticks)."""
+        return [ln for ln in canvas.lines if ln[1].get("fill") == "#f80"]
+
     def test_marker_follows_frequency_changes(self):
         app = self._make_app()
         # erster Status: Marke wird gezeichnet
         app._pending_status = self._status(3_600)
         app._poll_main_thread()
-        self.assertEqual(len(app.sweep_canvas.lines), 1)
+        self.assertEqual(len(self._markers(app.sweep_canvas)), 1)
         self.assertEqual(app._sweep_marker_hz, 3_600_000)
         # dieselbe Frequenz: kein Neuzeichnen
         app._pending_status = self._status(3_600)
         app._poll_main_thread()
-        self.assertEqual(len(app.sweep_canvas.lines), 1)
+        self.assertEqual(len(self._markers(app.sweep_canvas)), 1)
         # neue Frequenz: Marke wandert mit
         app._pending_status = self._status(3_700)
         app._poll_main_thread()
-        self.assertEqual(len(app.sweep_canvas.lines), 2)
+        self.assertEqual(len(self._markers(app.sweep_canvas)), 2)
         self.assertEqual(app._sweep_marker_hz, 3_700_000)
+
+    def test_axes_are_labeled(self):
+        app = self._make_app()
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        texts = [t[1].get("text") for t in app.sweep_canvas.texts]
+        # dBuV-Skala links und Einheit der Frequenzachse
+        self.assertIn("dBµV", texts)
+        self.assertIn("kHz", texts)   # 3.5-4 MHz Spanne -> kHz-Beschriftung
+        # RSSI-Ticks 0..120 (alle 20 dB) vorhanden
+        for tick in ("0", "40", "120"):
+            self.assertIn(tick, texts)
+
+    def test_missing_points_are_interpolated(self):
+        app = self._make_app()
+        # 3 Punkte geplant, mittlerer fehlt -> wird interpoliert (dunkel)
+        app._sweep_data = [(3_500_000, 10), (3_700_000, 30)]
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_marker_hz = None
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        greens = [r for r in app.sweep_canvas.rectangles
+                  if r[1].get("fill") == "#0f0"]
+        darks = [r for r in app.sweep_canvas.rectangles
+                 if r[1].get("fill") == "#060"]
+        self.assertEqual(len(greens), 2)   # gemessen
+        self.assertEqual(len(darks), 1)   # interpoliert
 
     def test_no_draw_without_spectrum_data(self):
         app = self._make_app()
@@ -259,20 +300,20 @@ class SpectrumMarkerTest(unittest.TestCase):
         app._pending_status = self._status(3_600)
         app._poll_main_thread()
         # waehrend des Sweeps zeichnet _sweep_on_status selbst
-        self.assertEqual(len(app.sweep_canvas.lines), 0)
+        self.assertEqual(self._markers(app.sweep_canvas), [])
         self.assertEqual(app._sweep_marker_hz, None)
 
     def test_marker_outside_range_is_not_drawn(self):
         app = self._make_app()
         app._pending_status = self._status(7_100)  # ausserhalb 3.5-4 MHz
         app._poll_main_thread()
-        # kein Punkt im Diagrammbereich -> keine Linie, aber Marker merken
-        self.assertEqual(len(app.sweep_canvas.lines), 0)
+        # kein Punkt im Diagrammbereich -> keine Marke, aber Marker merken
+        self.assertEqual(self._markers(app.sweep_canvas), [])
         self.assertEqual(app._sweep_marker_hz, 7_100_000)
         # Rueckkehr in den Bereich zeichnet wieder
         app._pending_status = self._status(3_800)
         app._poll_main_thread()
-        self.assertEqual(len(app.sweep_canvas.lines), 1)
+        self.assertEqual(len(self._markers(app.sweep_canvas)), 1)
 
 
 if __name__ == "__main__":
