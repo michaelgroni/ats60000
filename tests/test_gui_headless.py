@@ -329,11 +329,21 @@ class SpectrumMarkerTest(unittest.TestCase):
         app._last_status = protocol.ReceiverStatus(
             frequency=3_600, mode="AM", band="80M",
             rssi=64, snr=30)
-        # Zeigerinstrument: weisser Zeiger, Drehpunkt als Oval, Skalen-Ticks
+        # klassisches Zeigerinstrument: helle Flaeche, rotes Band am
+        # Skalenende, schwarzer Zeiger, Drehpunkt, Ticks mit Labeln
         app._smeter_redraw()
         canvas = app.smeter_canvas
-        needles = [ln for ln in canvas.lines if ln[1].get("fill") == "#fff"]
-        self.assertEqual(len(needles), 1)   # genau ein Zeiger
+        faces = [rc for rc in canvas.rectangles
+                 if rc[1].get("fill") == app._SMETER_FACE]
+        self.assertEqual(len(faces), 1)   # helles Zifferblatt
+        reds = [pg for pg in canvas.polygons
+                if pg[1].get("fill") == app._SMETER_RED]
+        self.assertEqual(len(reds), 1)   # rotes Uebersteuerungsband
+        cx, cy = app._SMETER_PIVOT
+        needles = [ln for ln in canvas.lines
+                   if ln[1].get("fill") == app._SMETER_NEEDLE
+                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1]
+        self.assertEqual(len(needles), 1)   # genau ein Zeiger vom Drehpunkt
         self.assertEqual(len(canvas.ovals), 1)   # Drehpunkt
         texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("64 dBµV", texts)
@@ -341,11 +351,26 @@ class SpectrumMarkerTest(unittest.TestCase):
         for tick in ("20", "60", "120"):
             self.assertIn(tick, texts)
         # Zeigerwinkel: 64/127 der Halbkreisspanne, von links ueber oben
-        cx, cy = app._SMETER_PIVOT
         (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
         angle = math.degrees(math.atan2(cy - y2, x2 - cx))
         expected = 180 - (64 / 127) * 180
         self.assertAlmostEqual(angle, expected, delta=2)
+
+    def test_smeter_labels_outside_scale(self):
+        import math
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M",
+            rssi=64, snr=30)
+        app._smeter_redraw()
+        cx, cy = app._SMETER_PIVOT
+        r = app._SMETER_R
+        # Tick-Labels liegen ausserhalb des Skalenradius
+        for coords, kw in app.smeter_canvas.texts:
+            if kw.get("text") in ("20", "40", "60", "80", "100", "120"):
+                d = math.hypot(coords[0] - cx, coords[1] - cy)
+                self.assertGreaterEqual(d, r + 3)
 
     def test_smeter_needle_follows_metric(self):
         from ats_mini_remote import protocol

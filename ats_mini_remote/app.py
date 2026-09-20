@@ -206,7 +206,8 @@ class RemoteApp:
                             variable=self.smeter_metric_var,
                             command=self._smeter_redraw).grid(
                 row=0, column=i, sticky="w", padx=2)
-        self.smeter_canvas = tk.Canvas(meter, width=260, height=96, bg="#000",
+        self.smeter_canvas = tk.Canvas(meter, width=260, height=118,
+                                       bg=self._SMETER_BG,
                                        highlightthickness=0)
         self.smeter_canvas.grid(row=1, column=0, columnspan=3,
                                sticky="we", pady=(4, 2))
@@ -840,15 +841,17 @@ class RemoteApp:
             self.log("Frequenz außerhalb des Bands")
 
     _SMETER_W = 260
-    _SMETER_H = 96
-    _SMETER_BG = "#000"
-    _SMETER_FG = "#0f0"
-    _SMETER_TXT = "#ccc"
-    _SMETER_TICK = "#888"
-    _SMETER_NEEDLE = "#fff"
-    _SMETER_PIVOT = (130, 78)   # Drehpunkt des Zeigers
-    _SMETER_R = 70              # Skalenradius
+    _SMETER_H = 118
+    _SMETER_BG = "#1a1a1a"     # dunkles Gehaeuse
+    _SMETER_FACE = "#f4eedd"   # helles Zifferblatt
+    _SMETER_TXT = "#111"
+    _SMETER_TICK = "#000"
+    _SMETER_RED = "#c00"       # roter Bereich am Skalenende
+    _SMETER_NEEDLE = "#000"
+    _SMETER_PIVOT = (130, 94)   # Drehpunkt des Zeigers
+    _SMETER_R = 60              # Skalenradius
     _SMETER_ARC = 180            # Zeichenauslenkung links->rechts (Grad)
+    _SMETER_RED_FROM = 0.85     # ab hier Skalenbereich rot
 
     def _smeter_value(self, status) -> tuple[float, str, list[str]]:
         """Metrik-abhaengiger Anzeigewert: (0..1, Text, Tick-Labels)."""
@@ -882,8 +885,9 @@ class RemoteApp:
         return v, f"{status.rssi} dBµV", [str(t) for t in range(20, 128, 20)]
 
     def _smeter_redraw(self):
-        """S-Meter neu zeichnen: analoges Zeigerinstrument mit
-        halbkreisförmiger Skala, Zeiger und Wertanzeige je Metrik."""
+        """S-Meter neu zeichnen: analoges Zeigerinstrument im klassischen
+        Look mit hellem Zifferblatt, Skala ausserhalb des Halbkreises
+        beschriftet, rotem Uebersteuerungsbereich und Zeiger."""
         import math as _math
         canvas = self.smeter_canvas
         canvas.delete("all")
@@ -892,6 +896,8 @@ class RemoteApp:
         if status is not None:
             value, text, ticks = self._smeter_value(status)
         value = max(0.0, min(value, 1.0))
+        w = self._SMETER_W
+        h = self._SMETER_H
         cx, cy = self._SMETER_PIVOT
         r = self._SMETER_R
         arc = self._SMETER_ARC
@@ -902,35 +908,48 @@ class RemoteApp:
             a = _math.radians(180 - angle_deg)
             return cx + radius * _math.cos(a), cy - radius * _math.sin(a)
 
-        # Skalenbogen mit Ticks und Labeln, Haupt- und Zwischenticks
+        # helles Zifferblatt im dunklen Gehaeuse, mit Blende als Rahmen
+        canvas.create_rectangle(4, 4, w - 4, h - 4,
+                                fill=self._SMETER_FACE,
+                                outline="#999", width=2)
+        # roter Uebersteuerungsbereich am Skalenende als Bogenband
+        a0 = self._SMETER_RED_FROM * arc
+        band = []
+        steps = 12
+        for i in range(steps + 1):
+            band.append(polar(a0 + (arc - a0) * i / steps, r + 2))
+        for i in range(steps, -1, -1):
+            band.append(polar(a0 + (arc - a0) * i / steps, r - 3))
+        canvas.create_polygon(*band, fill=self._SMETER_RED, outline="")
+        # Skala: Hauptticks mit Label ausserhalb des Bogens, Zwischenticks
         n = max(len(ticks) - 1, 1)
         for i in range(n + 1):
             angle = i * arc / n
             x_out, y_out = polar(angle, r)
-            x_in, y_in = polar(angle, r - 8)
+            x_in, y_in = polar(angle, r - 10)
             canvas.create_line(x_out, y_out, x_in, y_in,
-                               fill=self._SMETER_TICK, width=2 if i % 2 == 0 else 1)
-            lx, ly = polar(angle, r - 18)
+                               fill=self._SMETER_TICK, width=2)
+            lx, ly = polar(angle, r + 13)
             canvas.create_text(lx, ly, text=ticks[i], anchor="c",
-                               font=("", 6), fill=self._SMETER_TXT)
-            # Zwischenticks zwischen den Hauptticks
+                               font=("", 8), fill=self._SMETER_TXT)
             if i < n:
                 for sub in (1/3, 2/3):
                     a_sub = angle + arc / n * sub
                     xs_out, ys_out = polar(a_sub, r)
-                    xs_in, ys_in = polar(a_sub, r - 5)
+                    xs_in, ys_in = polar(a_sub, r - 6)
                     canvas.create_line(xs_out, ys_out, xs_in, ys_in,
                                        fill=self._SMETER_TICK, width=1)
-        # Zeiger: Linie vom Drehpunkt zum Skalenwert
-        nx, ny = polar(value * arc, r - 10)
+        # Zeiger vom Drehpunkt zum Skalenwert, Drehpunkt als Nabe
+        nx, ny = polar(value * arc, r - 6)
         canvas.create_line(cx, cy, nx, ny,
                            fill=self._SMETER_NEEDLE, width=2)
-        # Drehpunkt als kleiner Kreis
         canvas.create_oval(cx - 4, cy - 4, cx + 4, cy + 4,
                            fill=self._SMETER_TICK, outline="")
-        # Wertziffer unter dem Drehpunkt
-        canvas.create_text(cx, cy + 12, text=text, anchor="n",
-                           font=("", 8, "bold"), fill=self._SMETER_TXT)
+        # Wertziffer unter dem Drehpunkt, rot im Uebersteuerungsbereich
+        canvas.create_text(cx, cy + 14, text=text, anchor="n",
+                           font=("", 9, "bold"),
+                           fill=self._SMETER_RED if value >= self._SMETER_RED_FROM
+                           else self._SMETER_TXT)
 
     def _set_row_values(self, status: protocol.ReceiverStatus):
         """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
