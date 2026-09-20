@@ -29,7 +29,8 @@ BANDS = [
     ("VHF", 76000, 108000, ["FM"], 100000),
 ]
 
-STEPS = ["1k", "5k", "9k", "10k", "100k", "0.1M"]
+# wie Firmware Menu.cpp: amSteps (S = vorwaerts im Zyklus)
+STEPS = ["1k", "5k", "9k", "10k", "50k", "100k", "1M"]
 # wie Firmware Menu.cpp: amBandwidths (W = vorwaerts im Zyklus)
 BANDWIDTHS = ["1.0k", "1.8k", "2.0k", "2.5k", "3.0k", "4.0k", "6.0k"]
 
@@ -79,9 +80,9 @@ class MockState:
 
     def step_khz(self):
         text = STEPS[self.step_idx]
-        if text == "0.1M":
-            return 100
-        return int(text.rstrip("kM"))
+        if text.endswith("M"):
+            return int(float(text[:-1]) * 1000)
+        return int(text.rstrip("k"))
 
     def rotate_frequency(self, direction: int):
         freq = self.frequency + direction * self.step_khz()

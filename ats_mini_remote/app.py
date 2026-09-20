@@ -267,33 +267,41 @@ class RemoteApp:
 
         lo_khz, hi_khz = rng
         ssb = status.mode in ("LSB", "USB")
-        step_khz = (hi_khz - lo_khz) / (points - 1)
-        self._sweep_freqs = [int(round(lo_khz * 1000 + i * step_khz * 1000))
-                             for i in range(points)]
+        spacing_hz = (hi_khz - lo_khz) * 1000 / (points - 1)
+        # Passende Schrittweite: Sweepraster = zugehoeriges Schrittweiten-Raster
+        step_text = protocol.step_for_spacing(spacing_hz, status.mode)
+        step = protocol.step_hz(step_text)
+        self._sweep_freqs = protocol.aligned_sweep_freqs(
+            int(lo_khz) * 1000, int(hi_khz) * 1000, step)
+        if len(self._sweep_freqs) < 2:
+            self.log("Band zu schmal für diese Schrittweite – Sweep nicht möglich")
+            return
         self._sweep_index = 0
         self._sweep_data = []
         self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
         self._sweep_restore_freq = status.display_frequency_hz()
         # Bandbreite etwa auf die Messpunktschrittweite einstellen
-        self._sweep_bw_target = protocol.bandwidth_for_step(
-            step_khz, status.mode)
-        self._sweep_bw_restore = status.bandwidth
-        self._sweep_bw_phase = ("SET"
-                                if status.bandwidth != self._sweep_bw_target
-                                else None)
+        bw_target = protocol.bandwidth_for_step(step / 1000, status.mode)
+        self._sweep_setups = []   # (name, cmd_bytes, restore-Wert, ist-Wert)
+        if status.step != step_text:
+            self._sweep_setups.append((
+                "Schrittweite",
+                protocol.step_steps(status.step, step_text, status.mode),
+                status.step, step_text))
+        if status.bandwidth != bw_target:
+            self._sweep_setups.append((
+                "Bandbreite",
+                protocol.bandwidth_steps(status.bandwidth, bw_target,
+                                          status.mode),
+                status.bandwidth, bw_target))
+        self._sweep_applied = []
         self._sweep_active = True
         self.sweep_start_button.config(state=tk.DISABLED)
         self.sweep_stop_button.config(state=tk.NORMAL)
         self.log(f"Sweep über {status.band}: {lo_khz}–{hi_khz} kHz, "
-                 f"{points} Punkte, Bandbreite {self._sweep_bw_target}")
-        if self._sweep_bw_phase == "SET":
-            steps = protocol.bandwidth_steps(status.bandwidth,
-                                             self._sweep_bw_target,
-                                             status.mode)
-            self.send(steps)
-            self._sweep_arm_timeout()
-        else:
-            self._sweep_next()
+                 f"{len(self._sweep_freqs)} Punkte, Schrittweite {step_text}, "
+                 f"Bandbreite {bw_target}")
+        self._sweep_advance_setup()
 
     def sweep_stop(self):
         if not self._sweep_active:
@@ -335,15 +343,11 @@ class RemoteApp:
         self._sweep_timeout_id = None
         if not self._sweep_active:
             return
-        if self._sweep_bw_phase == "SET":
-            self.log("Bandbreite nicht bestätigt – Sweep mit aktueller Breite")
-            self._sweep_bw_phase = None
-            self._sweep_next()
-            return
-        if self._sweep_bw_phase == "RESTORE":
-            self.log("Bandbreite nicht zurückgestellt – bitte manuell prüfen")
-            self._sweep_bw_phase = None
-            self._sweep_really_finish()
+        if self._sweep_phase_setup is not None:
+            name, _cmd, restore, target = self._sweep_phase_setup
+            self.log(f"{name} nicht bestätigt ({target}) – Sweep trotzdem fortgesetzt")
+            self._sweep_phase_setup = None
+            self._sweep_advance_setup()
             return
         hz = self._sweep_freqs[self._sweep_index] \
             if self._sweep_index < len(self._sweep_freqs) else None
@@ -357,17 +361,13 @@ class RemoteApp:
         """Wird aus on_status gerufen: misst den Punkt, fährt fort."""
         if not self._sweep_active:
             return
-        if self._sweep_bw_phase == "SET":
-            if status.bandwidth == self._sweep_bw_target:
+        if self._sweep_phase_setup is not None:
+            name, _cmd, _restore, target = self._sweep_phase_setup
+            current = status.bandwidth if name == "Bandbreite" else status.step
+            if current == target:
                 self._sweep_disarm_timeout()
-                self._sweep_bw_phase = None
-                self._sweep_next()
-            return
-        if self._sweep_bw_phase == "RESTORE":
-            if status.bandwidth == self._sweep_bw_restore:
-                self._sweep_disarm_timeout()
-                self._sweep_bw_phase = None
-                self._sweep_really_finish()
+                self._sweep_phase_setup = None
+                self._sweep_advance_setup()
             return
         expected_hz = self._sweep_freqs[self._sweep_index] if \
             self._sweep_index < len(self._sweep_freqs) else None
@@ -389,20 +389,38 @@ class RemoteApp:
             # der 500-ms-Monitor-Teakt liefert die zugehörige Messung.
             self._sweep_next()
 
+    def _sweep_advance_setup(self):
+        """Naechste Einstellung (Schrittweite/Bandbreite) setzen."""
+        if not self._sweep_active:
+            return
+        if self._sweep_setups:
+            name, cmd, restore, target = self._sweep_setups.pop(0)
+            self._sweep_phase_setup = (name, cmd, restore, target)
+            # Umkehrung merken (S<->s, W<->w): kehrt die Bewegung auf dem
+            # zyklischen Index immer korrekt zurueck, unabhaengig davon,
+            # ob der Status die Aenderung schon gemeldet hat.
+            inverse = cmd.translate(bytes.maketrans(b"SWsw", b"swSW"))
+            self._sweep_applied.append((name, inverse, restore, target))
+            self.send(cmd)
+            self._sweep_arm_timeout()
+        else:
+            self._sweep_phase_setup = None
+            self._sweep_next()
+
     def _sweep_finish(self, message: str):
-        """Sweep beenden: Bandbreite zurueckstellen, dann aufräumen."""
+        """Sweep beenden: Einstellungen zurueckstellen, dann aufräumen."""
         self._sweep_disarm_timeout()
         self._sweep_message = message
-        status = self._last_status
-        mode = status.mode if status else "AM"
-        if (self._sweep_bw_restore is not None and status is not None
-                and status.bandwidth != self._sweep_bw_restore):
-            self._sweep_bw_phase = "RESTORE"
-            steps = protocol.bandwidth_steps(status.bandwidth,
-                                              self._sweep_bw_restore, mode)
-            self.send(steps)
-            self._sweep_arm_timeout()
-            return
+        self._sweep_active = False
+        # Einstellungen per Umkehrbefehl zurueckstellen; die Firmware
+        # verarbeitet Einzelzeichen-Befehle (S/s/W/w) sofort und in
+        # Reihenfolge, sodass die Umkehrung den Ausgangszustand
+        # wiederherstellt, unabhaengig vom Statusstand.
+        while self._sweep_applied:
+            _name, inverse, _restore, _target = self._sweep_applied.pop()
+            if inverse:
+                self.send(inverse)
+        self._sweep_setups = []
         self._sweep_really_finish()
 
     def _sweep_really_finish(self):
@@ -670,9 +688,9 @@ class RemoteApp:
     _pending_screenshot: protocol.Screenshot | None = None
     _sweep_active: bool = False
     _sweep_timeout_id: str | None = None
-    _sweep_bw_phase: str | None = None
-    _sweep_bw_target: str | None = None
-    _sweep_bw_restore: str | None = None
+    _sweep_phase_setup: tuple | None = None
+    _sweep_setups: list = []
+    _sweep_applied: list = []
     _sweep_message: str = ""
 
 

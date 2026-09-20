@@ -284,6 +284,69 @@ CMD_TOGGLE_LOG = b"t"
 CMD_SHOW_MEMORIES = b"$"
 CMD_SCREENSHOT = b"C"
 
+# Schrittweiten je Modus in Firmware-Reihenfolge (Menu.cpp: steps[]).
+# S/s laufen zyklisch durch diese Liste; der Status meldet den Text.
+# FM: kHz, SSB: Hz, AM: kHz (Einheiten wie in der Firmware-Tabelle).
+FM_STEPS = ["10k", "50k", "100k", "200k", "1M"]
+SSB_STEPS = ["10", "25", "50", "100", "500", "1k", "5k"]
+AM_STEPS = ["1k", "5k", "9k", "10k", "50k", "100k", "1M"]
+
+
+def step_list(mode: str) -> list[str]:
+    """Schrittweiten-Texte des Modus in Firmware-Reihenfolge (S/s-Zyklus)."""
+    if mode.upper() == "FM":
+        return list(FM_STEPS)
+    if mode.upper() in ("LSB", "USB"):
+        return list(SSB_STEPS)
+    return list(AM_STEPS)
+
+
+def step_hz(text: str) -> int:
+    """Schrittweiten-Text in Hz ('10k' -> 10000, '1M' -> 1000000)."""
+    value = text.strip().lower()
+    if value.endswith("m"):
+        return int(float(value[:-1]) * 1_000_000)
+    if value.endswith("k"):
+        return int(float(value[:-1]) * 1000)
+    return int(value)
+
+
+def step_steps(current: str, target: str, mode: str) -> bytes:
+    """Befehlsfolge (S/s), um von 'current' auf 'target' zu kommen.
+
+    Die Firmware laeuft zyklisch durch die Schrittweitenliste des Modus;
+    es wird der kuerzere Weg gewaehlt.
+    """
+    entries = step_list(mode)
+    cur = current if current in entries else entries[0]
+    tgt = target if target in entries else entries[0]
+    i_cur = entries.index(cur)
+    i_tgt = entries.index(tgt)
+    n = len(entries)
+    fwd = (i_tgt - i_cur) % n
+    rev = (i_cur - i_tgt) % n
+    if rev < fwd:
+        return CMD_STEP_DOWN * rev
+    return CMD_STEP_UP * fwd
+
+
+def step_for_spacing(spacing_hz: float, mode: str) -> str:
+    """Schrittweite, die der Messpunktschrittweite am naechsten liegt."""
+    entries = step_list(mode)
+    return min(entries, key=lambda t: abs(step_hz(t) - spacing_hz))
+
+
+def aligned_sweep_freqs(lo_hz: int, hi_hz: int, step: int) -> list[int]:
+    """Sweep-Frequenzen auf das Schrittweitenraster gerundet, in [lo, hi]."""
+    if step <= 0:
+        return [lo_hz, hi_hz]
+    first = ((lo_hz + step - 1) // step) * step
+    last = (hi_hz // step) * step
+    if last < first:
+        return [first] if first <= hi_hz else []
+    return list(range(first, last + 1, step))
+
+
 # Bandbreiten je Modus in Firmware-Reihenfolge (Menu.cpp: bandwidths[]).
 # W/w laufen zyklisch durch diese Liste; der Status meldet den Text.
 FM_BANDWIDTHS = ["Auto", "110k", "84k", "60k", "40k"]

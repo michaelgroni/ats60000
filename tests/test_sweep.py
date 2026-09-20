@@ -89,5 +89,48 @@ class AllBandRangeTest(unittest.TestCase):
             (9000, 11000))
 
 
+
+
+class StepSelectionTest(unittest.TestCase):
+    def test_step_lists_match_firmware(self):
+        self.assertEqual(protocol.FM_STEPS,
+                         ["10k", "50k", "100k", "200k", "1M"])
+        self.assertEqual(protocol.AM_STEPS,
+                         ["1k", "5k", "9k", "10k", "50k", "100k", "1M"])
+        self.assertEqual(protocol.SSB_STEPS[0], "10")
+
+    def test_step_hz(self):
+        self.assertEqual(protocol.step_hz("10k"), 10_000)
+        self.assertEqual(protocol.step_hz("1M"), 1_000_000)
+        self.assertEqual(protocol.step_hz("25"), 25)
+
+    def test_step_for_spacing_am(self):
+        # 31M, 60 Punkte: ~33,3 kHz Abstand -> 50k
+        self.assertEqual(protocol.step_for_spacing(33_333, "AM"), "50k")
+        # 41M, 60 Punkte: ~33,4 kHz -> 50k
+        self.assertEqual(protocol.step_for_spacing(33_400, "AM"), "50k")
+
+    def test_step_shortest_path(self):
+        # AM-Liste zyklisch: 1k -> 5k = 1x S, 1k -> 1M = 1x s (wrap)
+        self.assertEqual(protocol.step_steps("1k", "5k", "AM"), b"S")
+        self.assertEqual(protocol.step_steps("1k", "1M", "AM"), b"s")
+
+    def test_aligned_sweep_freqs_on_grid(self):
+        # 3500-4000 kHz, 50k-Raster -> 3500, 3550, ..., 4000
+        freqs = protocol.aligned_sweep_freqs(3_500_000, 4_000_000, 50_000)
+        self.assertEqual(freqs[0], 3_500_000)
+        self.assertEqual(freqs[-1], 4_000_000)
+        self.assertEqual(len(freqs), 11)
+        self.assertTrue(all(f % 50_000 == 0 for f in freqs))
+
+    def test_aligned_sweep_freqs_no_fit(self):
+        # kein Rasterpunkt im Band -> leer (Sweep startet dann nicht)
+        self.assertEqual(
+            protocol.aligned_sweep_freqs(3_510_000, 3_530_000, 50_000), [])
+        self.assertEqual(
+            protocol.aligned_sweep_freqs(3_510_000, 3_540_000, 50_000), [])
+
+
+
 if __name__ == "__main__":
     unittest.main()
