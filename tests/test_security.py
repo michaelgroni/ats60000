@@ -233,3 +233,37 @@ class MaliciousMemoryLineTest(unittest.TestCase):
     def test_valid_memory_line_still_parses(self):
         self.assertEqual(protocol.parse_memory_line("#01,VHF,107900000,FM"),
                          (1, "VHF", 107_900_000, "FM"))
+
+
+class ScreenshotProgressTest(unittest.TestCase):
+    """Fortschrittsanzeige des Screenshot-Empfangs (Client-Callback)."""
+
+    def test_progress_reports_rows(self):
+        from ats_mini_remote import mock_receiver
+        state = mock_receiver.MockState()
+        server = mock_receiver.MockServer(address=("127.0.0.1", 0), state=state)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        progress = []
+        screenshots = []
+        try:
+            client = RemoteClient(
+                on_screenshot=screenshots.append,
+                on_screenshot_progress=lambda r, t: progress.append((r, t)))
+            client.connect("127.0.0.1", port)
+            state.log_on = True
+            client.request_screenshot()
+            for _ in range(200):
+                if screenshots:
+                    break
+                threading.Event().wait(0.02)
+            client.disconnect()
+            self.assertTrue(screenshots, "Screenshot muss ankommen")
+            self.assertTrue(progress, "Fortschritt muss gemeldet werden")
+            self.assertEqual(progress[0], (0, 0))
+            # nach dem Header: Zielzeilenzahl bekannt, Werte steigen
+            self.assertEqual(progress[1][1], 1 + mock_receiver.SCREEN_HEIGHT)
+            self.assertEqual(progress[-1][0], progress[-1][1])
+        finally:
+            server.server_close()

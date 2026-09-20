@@ -103,6 +103,7 @@ class RemoteApp:
             on_line=self.log,
             on_disconnect=self.on_disconnect,
             on_screenshot=self.on_screenshot,
+            on_screenshot_progress=self.on_screenshot_progress,
         )
         self._pending_memory: list[tuple[int, str, int, str]] = []
         self._screenshot: protocol.Screenshot | None = None
@@ -1142,6 +1143,8 @@ class RemoteApp:
         if not self.client.is_connected():
             self.log("Nicht verbunden – Screenshot nicht möglich")
             return
+        self.shot_label.config(image="")
+        self.shot_label.config(text="Empfange… 0 %")
         self.client.request_screenshot()
 
     def save_screenshot(self):
@@ -1179,6 +1182,14 @@ class RemoteApp:
 
     def on_screenshot(self, shot: protocol.Screenshot):
         self._pending_screenshot = shot
+
+    def on_screenshot_progress(self, received: int, total: int):
+        """Fortschritt des Screenshot-Empfangs (aus dem Leser-Thread).
+
+        total = 0: Uebertragung laeuft noch ohne bekannte Zeilenzahl
+        (Header fehlt noch). Sonst: received von total Zeilen.
+        """
+        self._pending_screenshot_progress = (received, total)
 
     # ----------------------------------------------------------- Hilfsfunktionen
 
@@ -1248,6 +1259,14 @@ class RemoteApp:
             self._screenshot = shot
             self._show_screenshot(shot)
 
+        progress = getattr(self, "_pending_screenshot_progress", None)
+        if progress is not None:
+            self._pending_screenshot_progress = None
+            received, total = progress
+            if total > 0:
+                percent = min(99, received * 100 // total)
+                self.shot_label.config(text=f"Empfange… {percent} %")
+
         self.root.after(50, self._poll_main_thread)
 
     def _show_screenshot(self, shot: protocol.Screenshot):
@@ -1258,6 +1277,7 @@ class RemoteApp:
     _pending_log: list[str] = []
     _pending_status: protocol.ReceiverStatus | None = None
     _pending_screenshot: protocol.Screenshot | None = None
+    _pending_screenshot_progress: tuple[int, int] | None = None
     _sweep_active: bool = False
     _sweep_timeout_id: str | None = None
     _sweep_phase_setup: tuple | None = None

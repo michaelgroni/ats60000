@@ -25,6 +25,7 @@ class RemoteClient:
         on_line: Callable[[str], None] | None = None,
         on_disconnect: Callable[[str], None] | None = None,
         on_screenshot: Callable[[protocol.Screenshot], None] | None = None,
+        on_screenshot_progress: Callable[[int, int], None] | None = None,
     ):
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
@@ -38,6 +39,7 @@ class RemoteClient:
         self._screenshot_lines: list[str] = []
         self._screenshot_target_rows = 0
         self._on_screenshot: Callable[[protocol.Screenshot], None] | None = on_screenshot
+        self._on_screenshot_progress: Callable[[int, int], None] | None = on_screenshot_progress
         self._last_line_command = 0.0
 
     def _send_guard(self, data: bytes) -> None:
@@ -70,6 +72,8 @@ class RemoteClient:
         self._screenshot_lines = []
         self._screenshot_target_rows = 0
         self._collecting_screenshot = True
+        if self._on_screenshot_progress is not None:
+            self._on_screenshot_progress(0, 0)
         self.send(protocol.CMD_SCREENSHOT)
 
     def is_connected(self) -> bool:
@@ -171,6 +175,8 @@ class RemoteClient:
         self._collecting_screenshot = False
         self._screenshot_lines = []
         self._screenshot_target_rows = 0
+        if self._on_screenshot_progress is not None:
+            self._on_screenshot_progress(0, 0)
         if self._on_line is not None:
             self._on_line(f"Screenshot abgebrochen: {reason}")
 
@@ -197,6 +203,9 @@ class RemoteClient:
                     self._abort_screenshot("unplausible Bildhöhe")
                     return
                 self._screenshot_target_rows = 1 + height
+            if self._on_screenshot_progress is not None:
+                self._on_screenshot_progress(
+                    len(self._screenshot_lines), self._screenshot_target_rows)
             if self._screenshot_target_rows and \
                     len(self._screenshot_lines) >= self._screenshot_target_rows:
                 self._collecting_screenshot = False
