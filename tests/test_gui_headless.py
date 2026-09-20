@@ -298,6 +298,23 @@ class SpectrumMarkerTest(unittest.TestCase):
                   if ln[1].get("fill") == "#0a0"]
         self.assertEqual(len(curves), 0)
 
+    def test_frequency_axis_has_nine_ticks_and_clear_unit(self):
+        app = self._make_app()
+        app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_freq_range = (3_500_000, 3_700_000)
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        canvas = app.sweep_canvas
+        # unterhalb der Achse gezeichnete Ticks mit Zahl (anchor n)
+        freq_ticks = [t for t in canvas.texts
+                      if t[1].get("anchor") == "n"]
+        self.assertEqual(len(freq_ticks), 9)
+        # Einheit kHz steht rechts neben dem letzten Tick
+        unit = [t for t in canvas.texts if t[1].get("text") == "kHz"][0]
+        last_tick_x = max(t[0][0] for t in freq_ticks)
+        self.assertGreater(unit[0][0], last_tick_x)
+
     def test_incremental_draw_during_sweep(self):
         app = self._make_app()
         # 3 Punkte geplant, Reihenfolge wie beim Sweep von links nach rechts

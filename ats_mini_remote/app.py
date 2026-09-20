@@ -593,10 +593,10 @@ class RemoteApp:
 
     _SWEEP_AXIS_MIN = 60       # dBuV: kleineres Achsenmaximum nie sinnvoll
     _sweep_axis_max = 60       # aktuell gezeichnetes Achsenmaximum
-    _SWEEP_PAD_L = 28         # Platz fuer die dBuV-Achse links (schmal)
-    _SWEEP_PAD_R = 36         # Platz rechts: Frequenzen und Einheit unten rechts
+    _SWEEP_PAD_L = 32         # Platz fuer die dBuV-Achse links
+    _SWEEP_PAD_R = 46         # Platz rechts: Frequenz und Einheit ohne Ueberschneidung
     _SWEEP_PAD_B = 16         # Platz fuer die Frequenzachse unten
-    _SWEEP_PAD_T = 20         # Platz oben: Einheit ueber der Achsenspitze
+    _SWEEP_PAD_T = 22         # Platz oben: Einheit ueber der Achsenspitze
     _SWEEP_TICK_FONT = ("", 7)
 
     def _sweep_scale_max(self) -> int:
@@ -635,21 +635,22 @@ class RemoteApp:
         canvas.create_text(pad_l - 5, pad_t - 7, text="dBµV",
                            anchor="se", font=self._SWEEP_TICK_FONT, fill="#ccc")
 
-        # Frequenzachse unten: 5 Ticks, Einheit nach Spanne (MHz/kHz)
+        # Frequenzachse unten: 9 Ticks mit Zahl, Einheit nach Spanne (MHz/kHz)
         span = plot.span
         unit = "MHz" if span >= 2_000_000 else "kHz"
         scale = 1_000_000 if unit == "MHz" else 1_000
         canvas.create_line(pad_l, base_y, pad_l + plot.plot_w, base_y, fill="#888")
-        for i in range(5):
-            hz = plot.lo + i * span / 4
+        for i in range(9):
+            hz = plot.lo + i * span / 8
             x = fx(hz)
             canvas.create_line(x, base_y, x, base_y + 3, fill="#888")
             value = hz / scale
             text = f"{value:.2f}" if value < 100 else f"{value:.1f}"
             canvas.create_text(x, base_y + 5, text=text, anchor="n",
                                font=self._SWEEP_TICK_FONT, fill="#ccc")
-        # Einheit rechts unterhalb der Achsenspitze
-        canvas.create_text(pad_l + plot.plot_w + 10, base_y + 5, text=unit,
+        # Einheit rechts unterhalb der Achsenspitze, mit Abstand zur
+        # hoechsten Frequenz (nicht ueberschneidend)
+        canvas.create_text(pad_l + plot.plot_w + 18, base_y + 5, text=unit,
                            anchor="nw", font=self._SWEEP_TICK_FONT, fill="#ccc")
 
     def _sweep_draw_marker(self, plot: _SweepPlot):
