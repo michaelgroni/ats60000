@@ -35,6 +35,11 @@ herunterladen: `ATS-Mini-Remote.exe` ist eine einzelne, eigenständige
 Datei – kein Python, keine Installation, keine Administratorrechte.
 Einfach speichern und per Doppelklick starten.
 
+Eine ausführliche Schritt-für-Schritt-Anleitung ohne technische Details
+(für einfache Windows-Benutzer) gibt es auf Deutsch in
+[docs/ANLEITUNG.md](docs/ANLEITUNG.md) und auf Englisch in
+[docs/GUIDE.md](docs/GUIDE.md).
+
 * Beim ersten Start zeigt Windows SmartScreen eine Warnung („Windows hat
   Ihren PC geschützt“), weil die EXE nicht digital signiert ist.
   *Trotzdem ausführen* wählen – die Datei enthält nur das Programm.
