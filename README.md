@@ -27,6 +27,23 @@ Das Radio lauscht dann auf TCP-Port **60000** – im WLAN unter
 
 ## Anwendung starten
 
+### Windows ohne Installation (empfohlen)
+
+Das neueste Release auf der
+[Release-Seite](https://github.com/michaelgroni/ats60000/releases)
+herunterladen: `ATS-Mini-Remote.exe` ist eine einzelne, eigenständige
+Datei – kein Python, keine Installation, keine Administratorrechte.
+Einfach speichern und per Doppelklick starten.
+
+* Beim ersten Start zeigt Windows SmartScreen eine Warnung („Windows hat
+  Ihren PC geschützt“), weil die EXE nicht digital signiert ist.
+  *Trotzdem ausführen* wählen – die Datei enthält nur das Programm.
+* Wer Python bereits installiert hat: kein Konflikt, die EXE bringt
+  ihren eigenen Interpreter mit und berührt keine bestehende
+  Python-Installation.
+
+### Mit Python
+
 ```shell
 python3 -m ats_mini_remote
 ```
@@ -86,6 +103,26 @@ Speicherbefehle und erzeugt Screenshots.
 
 ```shell
 python3 -m unittest discover -s tests -v
+```
+
+## EXE selbst bauen (Windows)
+
+Die Windows-EXE des Releases wird mit PyInstaller erzeugt – die
+Konfiguration liegt in `ats-mini-remote.spec`:
+
+```shell
+pip install pyinstaller
+pyinstaller ats-mini-remote.spec
+```
+
+Ergebnis: `dist\ATS-Mini-Remote.exe`. Alternativ baut der
+GitHub-Workflow (`.github/workflows/release.yml`) die EXE automatisch
+und veröffentlicht sie als Release, wenn ein Versions-Tag (`v…`)
+gepusht wird:
+
+```shell
+git tag v0.1
+git push origin v0.1
 ```
 
 ## Projektstruktur

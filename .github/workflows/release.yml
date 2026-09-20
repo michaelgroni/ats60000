@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Abhaengigkeiten und Tests
+        run: |
+          pip install pyinstaller
+          python -m unittest discover -s tests
+      - name: EXE bauen
+        run: pyinstaller ats-mini-remote.spec
+      - name: Release anlegen und EXE anhaengen
+        run: |
+          gh release create "${{ github.ref_name }}" --verify-tag --title "ATS-Mini WLAN-Fernbedienung ${{ github.ref_name }}" --notes "WLAN-Fernbedienung fuer das ATS-Miniradio V1 (ESP32-S3/SI4732). Einzelne EXE fuer Windows - entpacken und starten, kein Python noetig." dist/ATS-Mini-Remote.exe
+        env:
+          GH_TOKEN: ${{ github.token }}
