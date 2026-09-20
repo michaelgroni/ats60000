@@ -130,13 +130,13 @@ class RemoteApp:
         self._volume_dragging = False
         self.volume_scale = ttk.Scale(ctrl, from_=0, to=63, variable=self.volume_var,
                                        command=self.on_volume_changed)
-        self.volume_scale.grid(row=0, column=4, columnspan=4, sticky="we", padx=8, pady=4)
         self.volume_scale.bind("<ButtonPress-1>", lambda _e: self._volume_drag(True))
         self.volume_scale.bind("<ButtonRelease-1>", lambda _e: self._volume_drag(False))
 
         rows = [
             ("Frequenz", None, None),
             ("Schrittweite", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
+            ("Lautstärke", None, None),
             ("Band", protocol.CMD_BAND_UP, protocol.CMD_BAND_DOWN),
             ("Modus", protocol.CMD_MODE_UP, protocol.CMD_MODE_DOWN),
             ("Bandbreite", protocol.CMD_BANDWIDTH_UP, protocol.CMD_BANDWIDTH_DOWN),
@@ -146,6 +146,12 @@ class RemoteApp:
             if label == "Frequenz":
                 down_cmd = lambda _l=None: self.tune(-1)
                 up_cmd = lambda _l=None: self.tune(+1)
+            elif label == "Lautstärke":
+                ttk.Label(ctrl, text=label, width=12).grid(
+                    row=row, column=0, sticky="w", padx=4)
+                self.volume_scale.grid(row=row, column=1, columnspan=3,
+                                       sticky="we", padx=2, pady=6)
+                continue
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
                 up_cmd = (lambda c=up: lambda: self.send(c))()
@@ -581,8 +587,9 @@ class RemoteApp:
         # Messpunkte als helle Balken; geplante, aber nicht gemessene
         # Punkte (Radio hat die Frequenz nicht bestätigt, z. B. Rundung am
         # Bandrand) werden zwischen den naechsten gemessenen Nachbarn
-        # linear interpoliert und als dunkle Balken gezeichnet -- die
-        # Kurve hat damit keine Luecken, der Unterschied bleibt erkennbar.
+        # linear interpoliert und als dunkle Balken gezeichnet. Die
+        # Verbindungslinie laeuft nur ueber gemessene Punkte -- sie darf
+        # interpolierte Werte nicht als echt verbinden.
         measured = dict(data)
         freqs_all = self._sweep_freqs or [hz for hz, _ in data]
         xs: list[float] = []
@@ -593,6 +600,8 @@ class RemoteApp:
                 y = fy(measured[hz])
                 canvas.create_rectangle(x - 1, y, x + 1, base_y,
                                         fill="#0f0", outline="")
+                xs.append(x)
+                ys.append(y)
             else:
                 rssi = _interp_rssi(freqs_all, measured, hz)
                 if rssi is None:
@@ -600,8 +609,6 @@ class RemoteApp:
                 y = fy(rssi)
                 canvas.create_rectangle(x - 1, y, x + 1, base_y,
                                         fill="#060", outline="")
-            xs.append(x)
-            ys.append(y)
         if len(xs) >= 2:
             canvas.create_line(*[c for p in zip(xs, ys) for c in p],
                                 fill="#0a0", width=1)
