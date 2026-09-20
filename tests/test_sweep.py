@@ -136,16 +136,25 @@ class StepSelectionTest(unittest.TestCase):
 
 class SuggestedPointsTest(unittest.TestCase):
     def test_vhf_gets_more_points(self):
-        # VHF: 44 MHz Spanne -> 200 (Deckelung)
-        self.assertEqual(protocol.suggested_sweep_points("VHF", "FM"), 200)
+        # VHF: 44 MHz Spanne, FM-Raster 200 kHz -> 221 Punkte
+        self.assertEqual(protocol.suggested_sweep_points("VHF", "FM"), 221)
 
     def test_small_band_gets_minimum(self):
-        # 15M: 200 kHz Spanne -> Minimum 10
-        self.assertEqual(protocol.suggested_sweep_points("15M", "AM"), 10)
+        # 15M: 200 kHz Spanne, AM-Raster 10 kHz -> 21 Punkte
+        self.assertEqual(protocol.suggested_sweep_points("15M", "AM"), 21)
 
     def test_medium_band(self):
-        # 31M: 2 MHz -> 21 Punkte
-        self.assertEqual(protocol.suggested_sweep_points("31M", "AM"), 21)
+        # 31M: 2 MHz, AM-Raster 10 kHz -> 201 Punkte
+        self.assertEqual(protocol.suggested_sweep_points("31M", "AM"), 201)
+
+    def test_ssb_resolves_single_signals(self):
+        # 80M (500 kHz, SSB): ~1 kHz Raster, damit knapp 3 kHz breite
+        # SSB-Signale einzeln unterscheidbar sind -> 500 (Deckelung)
+        self.assertEqual(protocol.suggested_sweep_points("80M", "LSB"), 500)
+
+    def test_ssb_40m(self):
+        # 40M: 300 kHz -> 301 Punkte mit ~1 kHz Raster
+        self.assertEqual(protocol.suggested_sweep_points("40M", "LSB"), 301)
 
     def test_unknown_band_fallback(self):
         self.assertEqual(protocol.suggested_sweep_points("XX", "AM"), 60)

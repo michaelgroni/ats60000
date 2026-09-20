@@ -154,7 +154,7 @@ class RemoteApp:
         sweep.pack(fill=tk.X, **pad)
         self.sweep_points_var = tk.StringVar(value="60")
         ttk.Label(sweep, text="Messpunkte:").grid(row=0, column=0, padx=4, pady=2)
-        ttk.Spinbox(sweep, from_=10, to=200, increment=10,
+        ttk.Spinbox(sweep, from_=10, to=500, increment=10,
                     textvariable=self.sweep_points_var, width=6).grid(row=0, column=1)
         self.sweep_start_button = ttk.Button(sweep, text="Sweep starten",
                                              command=self.sweep_start)
@@ -264,7 +264,7 @@ class RemoteApp:
             points = int(self.sweep_points_var.get())
         except ValueError:
             points = 60
-        points = max(10, min(200, points))
+        points = max(10, min(500, points))
 
         lo_khz, hi_khz = rng
         ssb = status.mode in ("LSB", "USB")
@@ -500,10 +500,13 @@ class RemoteApp:
                 vars_["Frequenz"].set(f"{hz / 1e3:.3f} kHz")
         if "Band" in vars_:
             vars_["Band"].set(status.band)
-        # Nach Verbindung und Bandwechsel sinnvolle Messpunktzahl waehlen
+        # Nach Verbindung, Band- und Moduswechsel sinnvolle Messpunktzahl
+        # waehlen (SSB braucht ein deutlich feineres Raster als AM/FM)
         if (self._sweep_points_pending
-                or status.band != self._sweep_points_band):
+                or status.band != self._sweep_points_band
+                or status.mode != self._sweep_points_mode):
             self._sweep_points_band = status.band
+            self._sweep_points_mode = status.mode
             points = protocol.suggested_sweep_points(status.band, status.mode)
             self.sweep_points_var.set(str(points))
             self._sweep_points_pending = False
@@ -715,6 +718,7 @@ class RemoteApp:
     _sweep_restore_freq: int | None = None
     _sweep_points_pending: bool = False
     _sweep_points_band: str = ""
+    _sweep_points_mode: str = ""
 
 
 def main():
