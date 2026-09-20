@@ -59,12 +59,12 @@ class MaliciousScreenshotTest(unittest.TestCase):
         size = 14 + 40 + 12 + width * height * 2
         header = bytearray()
         header += b"BM"
-        header += size.to_bytes(4, "big")
+        header += size.to_bytes(4, "little")
         header += b"\x00\x00\x00\x00"
-        header += (14 + 40 + 12).to_bytes(4, "big")
+        header += (14 + 40 + 12).to_bytes(4, "little")
         header += (40).to_bytes(4, "little")
-        header += width.to_bytes(4, "big")
-        header += height.to_bytes(4, "big")
+        header += width.to_bytes(4, "little")
+        header += height.to_bytes(4, "little")
         header += b"\x01\x00"          # planes
         header += b"\x10\x00"          # bpp
         header += (3).to_bytes(4, "little")   # compression
@@ -170,12 +170,12 @@ class MaliciousServerConnectionTest(unittest.TestCase):
             conn.recv(16)   # warten, bis der Client 'C' anfordert
             header = bytearray()
             header += b"BM"
-            header += (66).to_bytes(4, "big")
+            header += (66).to_bytes(4, "little")
             header += b"\x00\x00\x00\x00"
-            header += (66).to_bytes(4, "big")
+            header += (66).to_bytes(4, "little")
             header += (40).to_bytes(4, "little")
-            header += (4).to_bytes(4, "big")
-            header += (10 ** 9).to_bytes(4, "big")
+            header += (4).to_bytes(4, "little")
+            header += (10 ** 9).to_bytes(4, "little")
             header += b"\x01\x00\x10\x00" + (3).to_bytes(4, "little")
             header += (0).to_bytes(4, "little") + b"\x00" * 16
             header += b"\x00\xf8\x00\x00\xe0\x07\x00\x00\x1f\x00\x00\x00"

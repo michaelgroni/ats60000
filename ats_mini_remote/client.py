@@ -220,7 +220,7 @@ class RemoteClient:
                 except ValueError:
                     self._abort_screenshot("Header kein Hex")
                     return
-                height = int.from_bytes(header[22:26], "big")
+                height = int.from_bytes(header[22:26], "little")
                 if not 1 <= height <= self._SCREENSHOT_MAX_ROWS - 1:
                     self._abort_screenshot("unplausible Bildhöhe")
                     return

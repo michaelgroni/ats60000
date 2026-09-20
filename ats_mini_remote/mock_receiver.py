@@ -177,12 +177,12 @@ class MockState:
         size = 14 + 40 + 12 + SCREEN_WIDTH * SCREEN_HEIGHT * 2
         header = bytearray()
         header += b"BM"
-        header += size.to_bytes(4, "big")
+        header += size.to_bytes(4, "little")
         header += b"\x00\x00\x00\x00"
-        header += (14 + 40 + 12).to_bytes(4, "big")
+        header += (14 + 40 + 12).to_bytes(4, "little")
         header += (40).to_bytes(4, "little")
-        header += SCREEN_WIDTH.to_bytes(4, "big")
-        header += SCREEN_HEIGHT.to_bytes(4, "big")
+        header += SCREEN_WIDTH.to_bytes(4, "little")
+        header += SCREEN_HEIGHT.to_bytes(4, "little")
         header += struct.pack("<HH", 1, 16)
         header += struct.pack("<I", 3)
         header += struct.pack("<I", 0)
@@ -194,7 +194,7 @@ class MockState:
             row_hex = ""
             for x in range(SCREEN_WIDTH):
                 rgb = grid[y][x]
-                row_hex += f"{rgb:04x}"
+                row_hex += f"{((rgb & 0xFF) << 8) | (rgb >> 8):04x}"
             lines.append(row_hex)
         return "\r\n".join(lines) + "\r\n"
 

@@ -73,16 +73,17 @@ class CommandFormatTest(unittest.TestCase):
 
 class ScreenshotDecodeTest(unittest.TestCase):
     def _build(self, width=4, height=2, pixel=0x1234):
-        # Headerzeile exakt wie von der Firmware (htonl für size/offset/w/h)
+        # Headerzeile exakt wie von der Firmware: printf("%08x", htonl(v)),
+        # im Hex-Stream therefore little-endian (Byte-Reihenfolge eines BMP)
         size = 14 + 40 + 12 + width * height * 2
         header_hex = (
             "424d"
-            + f"{size:08x}"
+            + size.to_bytes(4, "little").hex()
             + "00000000"
-            + f"{14 + 40 + 12:08x}"
+            + (14 + 40 + 12).to_bytes(4, "little").hex()
             + "28000000"
-            + f"{width:08x}"
-            + f"{height:08x}"
+            + width.to_bytes(4, "little").hex()
+            + height.to_bytes(4, "little").hex()
             + "01001000"
             + "03000000"
             + "00000000"
@@ -95,8 +96,9 @@ class ScreenshotDecodeTest(unittest.TestCase):
             + "1f000000"
         )
         lines = [header_hex]
+        px_le = ((pixel & 0xFF) << 8) | (pixel >> 8)
         for _ in range(height):
-            lines.append(f"{pixel:04x}" * width)
+            lines.append(f"{px_le:04x}" * width)
         return lines
 
     def test_decode_valid(self):

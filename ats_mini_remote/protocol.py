@@ -687,9 +687,11 @@ def decode_screenshot(lines: list[str]) -> Screenshot:
     Das Radio sendet 14 Bytes BMP-Dateiheader, 40 Bytes BITMAPINFOHEADER
     und 12 Bytes Farbmasken in einer Hexzeile, danach je Displayzeile eine
     Hexzeile mit 16-Bit-Pixeldaten (bottom-up). Größe, Offset, Breite und
-    Höhe werden von der Firmware mit htonl() bzw. die Pixel mit htons()
-    ausgegeben und sind daher im Stream big-endian codiert, die übrigen
-    Headerfelder sind little-endian Literale.
+    Höhe gibt die Firmware mit htonl() aus, die Pixel mit htons(); beide
+    tauschen auf dem Little-Endian-ESP32 die Bytes, printf("%x") druckt
+    dann den getauschten Wert -- im Hex-Stream stehen die Bytes daher
+    little-endian wie in einem regulären BMP. Die übrigen Headerfelder
+    sind little-endian Literale.
 
     Die Daten stammen aus dem Netzwerk und koennen manipuliert sein;
     Gesamtlaenge und Bilddimensionen sind deshalb begrenzt.
@@ -713,11 +715,11 @@ def decode_screenshot(lines: list[str]) -> Screenshot:
     if raw[0:2] != b"BM":
         raise ValueError("Keine BMP-Signatur im Screenshot")
 
-    size = int.from_bytes(raw[2:6], "big")
-    offset = int.from_bytes(raw[10:14], "big")
+    size = int.from_bytes(raw[2:6], "little")
+    offset = int.from_bytes(raw[10:14], "little")
     header_size = int.from_bytes(raw[14:18], "little")
-    width = int.from_bytes(raw[18:22], "big")
-    height = int.from_bytes(raw[22:26], "big")
+    width = int.from_bytes(raw[18:22], "little")
+    height = int.from_bytes(raw[22:26], "little")
     planes = int.from_bytes(raw[26:28], "little")
     bpp = int.from_bytes(raw[28:30], "little")
     compression = int.from_bytes(raw[30:34], "little")
@@ -742,7 +744,7 @@ def decode_screenshot(lines: list[str]) -> Screenshot:
         row: list[tuple[int, int, int]] = []
         base = offset + y * rowsize
         for x in range(width):
-            value = int.from_bytes(raw[base + x * 2: base + x * 2 + 2], "big")
+            value = int.from_bytes(raw[base + x * 2: base + x * 2 + 2], "little")
             r5 = (value >> 11) & 0x1F
             g6 = (value >> 5) & 0x3F
             b5 = value & 0x1F
