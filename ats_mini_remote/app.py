@@ -59,7 +59,6 @@ class RemoteApp:
         self.mode_var = tk.StringVar(value="–")
         self.sigm_var = tk.StringVar(value="–")
         self.batt_var = tk.StringVar(value="–")
-        self.vol_var = tk.StringVar(value="–")
         for col, (label, var) in enumerate([
             ("Frequenz", self.freq_var),
             ("Band", self.band_var),
@@ -71,10 +70,6 @@ class RemoteApp:
                 row=0, column=col, sticky="w", padx=8, pady=(6, 0))
             ttk.Label(status, textvariable=var, font=("", 12, "bold")).grid(
                 row=1, column=col, sticky="w", padx=8, pady=(0, 6))
-        ttk.Label(status, text="Lautstärke").grid(
-            row=2, column=0, sticky="w", padx=8, pady=(0, 6))
-        ttk.Label(status, textvariable=self.vol_var).grid(
-            row=2, column=1, sticky="w", pady=(0, 6))
 
         # Steuerung
         ctrl = ttk.LabelFrame(outer, text="Steuerung")
@@ -90,38 +85,39 @@ class RemoteApp:
         unit_box.grid(row=0, column=2, padx=2)
         ttk.Button(ctrl, text="Setzen", command=self.set_frequency).grid(
             row=0, column=3, padx=4)
-        ttk.Button(ctrl, text="▼",
-                   command=lambda: self.tune(-1)).grid(
-            row=0, column=4, padx=2)
-        ttk.Button(ctrl, text="▲",
-                   command=lambda: self.tune(+1)).grid(
-            row=0, column=5, padx=2)
-
-        for row, (label, up, down) in enumerate([
-            ("Band", protocol.CMD_BAND_UP, protocol.CMD_BAND_DOWN),
-            ("Modus", protocol.CMD_MODE_UP, protocol.CMD_MODE_DOWN),
-            ("Schrittweite", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
-            ("Bandbreite", protocol.CMD_BANDWIDTH_UP, protocol.CMD_BANDWIDTH_DOWN),
-            ("AGC/Attn", protocol.CMD_AGC_UP, protocol.CMD_AGC_DOWN),
-        ], start=2):
-            ttk.Label(ctrl, text=label).grid(row=row, column=0, sticky="w", padx=4, pady=2)
-            ttk.Button(ctrl, text="◀", width=3,
-                       command=lambda c=down: self.send(c)).grid(row=row, column=1, sticky="w")
-            value_var = tk.StringVar(value="–")
-            self._row_value_vars[label] = value_var
-            ttk.Label(ctrl, textvariable=value_var, width=12,
-                      font=("", 9, "bold")).grid(row=row, column=2, sticky="w", padx=8)
-            ttk.Button(ctrl, text="▶", width=3,
-                       command=lambda c=up: self.send(c)).grid(row=row, column=3, sticky="w")
 
         self.volume_var = tk.IntVar(value=0)
         self._volume_dragging = False
         self.volume_scale = ttk.Scale(ctrl, from_=0, to=63, variable=self.volume_var,
                                        command=self.on_volume_changed)
-        self.volume_scale.grid(row=7, column=1, columnspan=3, sticky="we", padx=4, pady=2)
+        self.volume_scale.grid(row=0, column=4, columnspan=4, sticky="we", padx=8, pady=4)
         self.volume_scale.bind("<ButtonPress-1>", lambda _e: self._volume_drag(True))
         self.volume_scale.bind("<ButtonRelease-1>", lambda _e: self._volume_drag(False))
-        ttk.Label(ctrl, text="Lautstärke").grid(row=7, column=0, sticky="w", padx=4)
+
+        rows = [
+            ("Frequenz", None, None),
+            ("Band", protocol.CMD_BAND_UP, protocol.CMD_BAND_DOWN),
+            ("Modus", protocol.CMD_MODE_UP, protocol.CMD_MODE_DOWN),
+            ("Schrittweite", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
+            ("Bandbreite", protocol.CMD_BANDWIDTH_UP, protocol.CMD_BANDWIDTH_DOWN),
+            ("AGC/Attn", protocol.CMD_AGC_UP, protocol.CMD_AGC_DOWN),
+        ]
+        for row, (label, up, down) in enumerate(rows, start=1):
+            if label == "Frequenz":
+                down_cmd = lambda _l=None: self.tune(-1)
+                up_cmd = lambda _l=None: self.tune(+1)
+            else:
+                down_cmd = (lambda c=down: lambda: self.send(c))()
+                up_cmd = (lambda c=up: lambda: self.send(c))()
+            ttk.Button(ctrl, text="▼", width=3,
+                       command=down_cmd).grid(row=row, column=0, sticky="w", padx=4, pady=2)
+            value_var = tk.StringVar(value="–")
+            self._row_value_vars[label] = value_var
+            ttk.Label(ctrl, text=label, width=12).grid(row=row, column=1, sticky="w", padx=4)
+            ttk.Label(ctrl, textvariable=value_var, width=12,
+                      font=("", 9, "bold")).grid(row=row, column=2, sticky="w", padx=8)
+            ttk.Button(ctrl, text="▲", width=3,
+                       command=up_cmd).grid(row=row, column=3, sticky="w")
 
         # Speicher
         mem = ttk.LabelFrame(outer, text="Speicherplätze")
@@ -216,8 +212,14 @@ class RemoteApp:
             self.log("Frequenz außerhalb des Bands – Schritt ignoriert")
 
     def _set_row_values(self, status: protocol.ReceiverStatus):
-        """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
+        """Wertanzeige zwischen den ▼/▲-Buttons aktualisieren."""
         vars_ = self._row_value_vars
+        if "Frequenz" in vars_:
+            hz = status.display_frequency_hz()
+            if status.mode.upper() == "FM":
+                vars_["Frequenz"].set(f"{hz / 1e6:.2f} MHz")
+            else:
+                vars_["Frequenz"].set(f"{hz / 1e3:.3f} kHz")
         if "Band" in vars_:
             vars_["Band"].set(status.band)
         if "Modus" in vars_:
@@ -396,7 +398,6 @@ class RemoteApp:
             self.mode_var.set(status.mode)
             self.sigm_var.set(f"{status.rssi} dBµV / {status.snr} dB")
             self.batt_var.set(f"{status.voltage:.2f} V")
-            self.vol_var.set(str(status.volume))
             self._set_row_values(status)
 
         shot = getattr(self, "_pending_screenshot", None)
