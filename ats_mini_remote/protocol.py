@@ -284,6 +284,87 @@ CMD_TOGGLE_LOG = b"t"
 CMD_SHOW_MEMORIES = b"$"
 CMD_SCREENSHOT = b"C"
 
+# Bandbreiten je Modus in Firmware-Reihenfolge (Menu.cpp: bandwidths[]).
+# W/w laufen zyklisch durch diese Liste; der Status meldet den Text.
+FM_BANDWIDTHS = ["Auto", "110k", "84k", "60k", "40k"]
+SSB_BANDWIDTHS = ["0.5k", "1.0k", "1.2k", "2.2k", "3.0k", "4.0k"]
+AM_BANDWIDTHS = ["1.0k", "1.8k", "2.0k", "2.5k", "3.0k", "4.0k", "6.0k"]
+
+
+def bandwidth_list(mode: str) -> list[str]:
+    """Bandbreiten-Texte des Modus in Firmware-Reihenfolge (W/w-Zyklus)."""
+    if mode.upper() == "FM":
+        return list(FM_BANDWIDTHS)
+    if mode.upper() in ("LSB", "USB"):
+        return list(SSB_BANDWIDTHS)
+    return list(AM_BANDWIDTHS)
+
+
+def bandwidth_khz(text: str, fm: bool) -> float:
+    """Bandbreiten-Text in kHz ('Auto' -> 110.0 bei FM)."""
+    if text.lower() == "auto":
+        return 110.0 if fm else 6.0
+    value = float(text.rstrip("kK"))
+    return value
+
+
+def bandwidth_steps(current: str, target: str, mode: str) -> bytes:
+    """Befehlsfolge (W/w), um von 'current' auf 'target' zu kommen.
+
+    Die Firmware laeuft zyklisch durch die Liste des Modus; W = vorwaerts,
+    w = rueckwaerts. Es wird der kuerzere Weg gewaehlt.
+    """
+    entries = bandwidth_list(mode)
+    cur = current if current in entries else entries[0]
+    tgt = target if target in entries else entries[0]
+    i_cur = entries.index(cur)
+    i_tgt = entries.index(tgt)
+    n = len(entries)
+    fwd = (i_tgt - i_cur) % n
+    rev = (i_cur - i_tgt) % n
+    if rev < fwd:
+        return CMD_BANDWIDTH_DOWN * rev
+    return CMD_BANDWIDTH_UP * fwd
+
+
+def bandwidth_for_step(step_khz: float, mode: str) -> str:
+    """Passende Bandbreite zur Messpunktschrittweite waehlen.
+
+    Die Breite soll etwa der Schrittweite entsprechen; die kleinste
+    verfuegbare Breite >= Schrittweite wird gewaehlt. 'Auto' wird
+    vermieden, damit der Sweep mit einem festen Filter misst.
+    """
+    fm = mode.upper() == "FM"
+    entries = [t for t in bandwidth_list(mode) if t.lower() != "auto"]
+    for text in entries:
+        if bandwidth_khz(text, fm) >= step_khz:
+            return text
+    return entries[-1]
+
+
+def sweep_points_for_band(band: str, mode: str,
+                          current_hz: int = 0) -> tuple[int, int] | None:
+    """Messbereich fuer einen Sweep: (min_kHz, max_kHz).
+
+    Im Band 'ALL' wird das aktuelle MHz ganzzahlig ab- und aufgerundet:
+    Der Sweep umfasst genau den MHz-Bereich, in dem die aktuelle
+    Frequenz liegt (z. B. 15000-16000 kHz bei 15,2 MHz).
+    """
+    rng = band_range(band, mode)
+    if rng is None:
+        return None
+    lo, hi = rng
+    if band.upper() == "ALL":
+        if current_hz <= 0:
+            return None
+        mhz_lo = max(lo, (current_hz // 1_000_000) * 1000)
+        mhz_hi = min(hi, mhz_lo + 1000)
+        return mhz_lo, mhz_hi
+    return lo, hi
+
+
+
+
 
 def volume_burst(current: int, target: int) -> bytes:
     """Befehlsfolge, um von 'current' auf 'target' zu kommen (ein Burst).

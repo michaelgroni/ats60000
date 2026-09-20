@@ -30,7 +30,8 @@ BANDS = [
 ]
 
 STEPS = ["1k", "5k", "9k", "10k", "100k", "0.1M"]
-BANDWIDTHS = ["6.0k", "4.0k", "2.5k", "1.8k"]
+# wie Firmware Menu.cpp: amBandwidths (W = vorwaerts im Zyklus)
+BANDWIDTHS = ["1.0k", "1.8k", "2.0k", "2.5k", "3.0k", "4.0k", "6.0k"]
 
 BFO_STEPS = [50, 100, 250]
 

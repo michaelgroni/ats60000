@@ -254,7 +254,8 @@ class RemoteApp:
         if status is None:
             self.log("Kein Status – Sweep nicht möglich")
             return
-        rng = protocol.band_range(status.band, status.mode)
+        rng = protocol.sweep_points_for_band(
+            status.band, status.mode, status.display_frequency_hz())
         if rng is None:
             self.log(f"Band '{status.band}' unbekannt – Sweep nicht möglich")
             return
@@ -273,12 +274,26 @@ class RemoteApp:
         self._sweep_data = []
         self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
         self._sweep_restore_freq = status.display_frequency_hz()
+        # Bandbreite etwa auf die Messpunktschrittweite einstellen
+        self._sweep_bw_target = protocol.bandwidth_for_step(
+            step_khz, status.mode)
+        self._sweep_bw_restore = status.bandwidth
+        self._sweep_bw_phase = ("SET"
+                                if status.bandwidth != self._sweep_bw_target
+                                else None)
         self._sweep_active = True
         self.sweep_start_button.config(state=tk.DISABLED)
         self.sweep_stop_button.config(state=tk.NORMAL)
         self.log(f"Sweep über {status.band}: {lo_khz}–{hi_khz} kHz, "
-                 f"{points} Punkte")
-        self._sweep_next()
+                 f"{points} Punkte, Bandbreite {self._sweep_bw_target}")
+        if self._sweep_bw_phase == "SET":
+            steps = protocol.bandwidth_steps(status.bandwidth,
+                                             self._sweep_bw_target,
+                                             status.mode)
+            self.send(steps)
+            self._sweep_arm_timeout()
+        else:
+            self._sweep_next()
 
     def sweep_stop(self):
         if not self._sweep_active:
@@ -320,6 +335,16 @@ class RemoteApp:
         self._sweep_timeout_id = None
         if not self._sweep_active:
             return
+        if self._sweep_bw_phase == "SET":
+            self.log("Bandbreite nicht bestätigt – Sweep mit aktueller Breite")
+            self._sweep_bw_phase = None
+            self._sweep_next()
+            return
+        if self._sweep_bw_phase == "RESTORE":
+            self.log("Bandbreite nicht zurückgestellt – bitte manuell prüfen")
+            self._sweep_bw_phase = None
+            self._sweep_really_finish()
+            return
         hz = self._sweep_freqs[self._sweep_index] \
             if self._sweep_index < len(self._sweep_freqs) else None
         self.log(f"Keine Bestätigung für {hz / 1000:.1f} kHz – Punkt übersprungen")
@@ -331,6 +356,18 @@ class RemoteApp:
     def _sweep_on_status(self, status: protocol.ReceiverStatus):
         """Wird aus on_status gerufen: misst den Punkt, fährt fort."""
         if not self._sweep_active:
+            return
+        if self._sweep_bw_phase == "SET":
+            if status.bandwidth == self._sweep_bw_target:
+                self._sweep_disarm_timeout()
+                self._sweep_bw_phase = None
+                self._sweep_next()
+            return
+        if self._sweep_bw_phase == "RESTORE":
+            if status.bandwidth == self._sweep_bw_restore:
+                self._sweep_disarm_timeout()
+                self._sweep_bw_phase = None
+                self._sweep_really_finish()
             return
         expected_hz = self._sweep_freqs[self._sweep_index] if \
             self._sweep_index < len(self._sweep_freqs) else None
@@ -353,11 +390,27 @@ class RemoteApp:
             self._sweep_next()
 
     def _sweep_finish(self, message: str):
+        """Sweep beenden: Bandbreite zurueckstellen, dann aufräumen."""
+        self._sweep_disarm_timeout()
+        self._sweep_message = message
+        status = self._last_status
+        mode = status.mode if status else "AM"
+        if (self._sweep_bw_restore is not None and status is not None
+                and status.bandwidth != self._sweep_bw_restore):
+            self._sweep_bw_phase = "RESTORE"
+            steps = protocol.bandwidth_steps(status.bandwidth,
+                                              self._sweep_bw_restore, mode)
+            self.send(steps)
+            self._sweep_arm_timeout()
+            return
+        self._sweep_really_finish()
+
+    def _sweep_really_finish(self):
         self._sweep_active = False
         self._sweep_disarm_timeout()
         self.sweep_start_button.config(state=tk.NORMAL)
         self.sweep_stop_button.config(state=tk.DISABLED)
-        self.sweep_progress_var.set(message)
+        self.sweep_progress_var.set(self._sweep_message or "Fertig")
         restore = self._sweep_restore_freq
         if restore is not None:
             status = self._last_status
@@ -366,7 +419,8 @@ class RemoteApp:
                 self.send(protocol.format_frequency_command(restore, ssb))
             except ValueError:
                 pass
-        self.log(f"Sweep {message}: {len(self._sweep_data or [])} Punkte")
+        self.log(f"Sweep {self._sweep_message}: "
+                 f"{len(self._sweep_data or [])} Punkte")
 
     def _sweep_draw(self):
         data = self._sweep_data
@@ -614,7 +668,12 @@ class RemoteApp:
     _pending_log: list[str] = []
     _pending_status: protocol.ReceiverStatus | None = None
     _pending_screenshot: protocol.Screenshot | None = None
+    _sweep_active: bool = False
     _sweep_timeout_id: str | None = None
+    _sweep_bw_phase: str | None = None
+    _sweep_bw_target: str | None = None
+    _sweep_bw_restore: str | None = None
+    _sweep_message: str = ""
 
 
 def main():

@@ -48,5 +48,46 @@ class SweepPointGenerationTest(unittest.TestCase):
         self.assertLess(estimated, 35)
 
 
+
+
+class BandwidthSelectionTest(unittest.TestCase):
+    def test_am_step_matches_bandwidth(self):
+        # 31M: 2 MHz / 60 Punkte = ~33,3 kHz -> groesste AM-Breite 6.0k
+        self.assertEqual(protocol.bandwidth_for_step(33.3, "AM"), "6.0k")
+
+    def test_small_step_smallest_bandwidth(self):
+        self.assertEqual(protocol.bandwidth_for_step(0.4, "LSB"), "0.5k")
+
+    def test_fm_wide_step(self):
+        self.assertEqual(protocol.bandwidth_for_step(100.0, "FM"), "110k")
+
+    def test_steps_shortest_path(self):
+        # AM: 6.0k (Index 6) -> 1.0k (Index 0): 1x w statt 6x W
+        # AM-Liste ist zyklisch: 6.0k -> 1.0k ist EIN W-Schritt (wrap)
+        self.assertEqual(protocol.bandwidth_steps("6.0k", "1.0k", "AM"),
+                         b"W")
+        self.assertEqual(protocol.bandwidth_steps("1.0k", "6.0k", "AM"),
+                         b"w")
+
+
+class AllBandRangeTest(unittest.TestCase):
+    def test_all_band_uses_current_mhz(self):
+        # 15,2 MHz -> Sweep 15000-16000 kHz
+        self.assertEqual(
+            protocol.sweep_points_for_band("ALL", "AM", 15_200_000),
+            (15000, 16000))
+
+    def test_all_band_clamps_to_band(self):
+        # untere Bandgrenze 150 kHz: 0,15 MHz -> 150-1000 kHz
+        self.assertEqual(
+            protocol.sweep_points_for_band("ALL", "AM", 150_000),
+            (150, 1150))
+
+    def test_normal_band_unchanged(self):
+        self.assertEqual(
+            protocol.sweep_points_for_band("31M", "AM", 9_650_000),
+            (9000, 11000))
+
+
 if __name__ == "__main__":
     unittest.main()
