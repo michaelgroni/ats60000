@@ -123,6 +123,45 @@ def parse_memory_line(line: str) -> tuple[int, str, int, str] | None:
     return slot, fields[1], freq, fields[3]
 
 
+def s_meter(rssi: int, fm: bool) -> str:
+    """S-Wert nach Kurzwellen-Praxis aus der RSSI-Angabe (dBµV).
+
+    Entspricht der Umrechnungstabelle der Firmware (Utils.cpp:421);
+    HF (AM/SSB) und FM haben unterschiedliche Skalen, über S9 hinaus
+    wird wie üblich in 10-dB-Schritten weitergezählt.
+    """
+    if not fm:
+        if rssi <= 1: return "S0"
+        if rssi <= 2: return "S1"
+        if rssi <= 3: return "S2"
+        if rssi <= 4: return "S3"
+        if rssi <= 10: return "S4"
+        if rssi <= 16: return "S5"
+        if rssi <= 22: return "S6"
+        if rssi <= 28: return "S7"
+        if rssi <= 34: return "S8"
+        if rssi <= 44: return "S9"
+        if rssi <= 54: return "S9+10"
+        if rssi <= 64: return "S9+20"
+        if rssi <= 74: return "S9+30"
+        if rssi <= 84: return "S9+40"
+        if rssi <= 94: return "S9+50"
+        if rssi <= 95: return "S9+60"
+        return ">S9+60"
+    if rssi <= 1: return "S0"
+    if rssi <= 2: return "S6"
+    if rssi <= 8: return "S7"
+    if rssi <= 14: return "S8"
+    if rssi <= 24: return "S9"
+    if rssi <= 34: return "S9+10"
+    if rssi <= 44: return "S9+20"
+    if rssi <= 54: return "S9+30"
+    if rssi <= 64: return "S9+40"
+    if rssi <= 74: return "S9+50"
+    if rssi <= 76: return "S9+60"
+    return ">S9+60"
+
+
 def step_size_hz(status: "ReceiverStatus") -> int:
     """Wandelt das Schrittweiten-Feld des Monitor-Status in Hz um.
 

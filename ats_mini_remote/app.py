@@ -57,13 +57,17 @@ class RemoteApp:
         self.freq_var = tk.StringVar(value="–")
         self.band_var = tk.StringVar(value="–")
         self.mode_var = tk.StringVar(value="–")
-        self.sigm_var = tk.StringVar(value="–")
+        self.rssi_var = tk.StringVar(value="–")
+        self.smeter_var = tk.StringVar(value="–")
+        self.snr_var = tk.StringVar(value="–")
         self.batt_var = tk.StringVar(value="–")
         for col, (label, var) in enumerate([
             ("Frequenz", self.freq_var),
             ("Band", self.band_var),
             ("Modus", self.mode_var),
-            ("Signal", self.sigm_var),
+            ("Signalstärke", self.rssi_var),
+            ("S-Wert", self.smeter_var),
+            ("SNR", self.snr_var),
             ("Batterie", self.batt_var),
         ]):
             ttk.Label(status, text=label, font=("", 8, "bold")).grid(
@@ -396,7 +400,10 @@ class RemoteApp:
                 self.freq_var.set(f"{hz / 1e3:.3f} kHz")
             self.band_var.set(status.band)
             self.mode_var.set(status.mode)
-            self.sigm_var.set(f"{status.rssi} dBµV / {status.snr} dB")
+            self.rssi_var.set(f"{status.rssi} dBµV")
+            self.smeter_var.set(
+                protocol.s_meter(status.rssi, status.mode.upper() == "FM"))
+            self.snr_var.set(f"{status.snr} dB")
             self.batt_var.set(f"{status.voltage:.2f} V")
             self._set_row_values(status)
 
