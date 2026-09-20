@@ -125,5 +125,155 @@ class GuiSmokeTest(unittest.TestCase):
         self.assertTrue(True)
 
 
+class FakeCanvas:
+    """Zeichenoperationen mitzaehlen statt darstellen."""
+
+    def __init__(self):
+        self.lines = []
+        self.rectangles = []
+        self.deleted = 0
+        self.width = 300
+
+    def delete(self, *a, **kw):
+        self.deleted += 1
+
+    def winfo_width(self):
+        return self.width
+
+    def create_rectangle(self, *a, **kw):
+        self.rectangles.append((a, kw))
+
+    def create_line(self, *a, **kw):
+        self.lines.append((a, kw))
+
+
+class FakeVar:
+    def __init__(self, *a, **kw):
+        self.value = None
+
+    def set(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+
+class FakeLogText:
+    """Stub fuer das Log-Textfeld (config/insert/see/index/delete)."""
+
+    def config(self, **kw):
+        pass
+
+    def insert(self, *a, **kw):
+        pass
+
+    def see(self, *a, **kw):
+        pass
+
+    def index(self, *a, **kw):
+        return "1.0"
+
+    def delete(self, *a, **kw):
+        pass
+
+
+class SpectrumMarkerTest(unittest.TestCase):
+    """Frequenzmarke muss Frequenzaenderungen nachziehen."""
+
+    def _make_app(self):
+        make_tkinter_mock()
+        for name in list(sys.modules):
+            if name.startswith("ats_mini_remote.app"):
+                del sys.modules[name]
+        from ats_mini_remote import app as app_mod
+        application = object.__new__(app_mod.RemoteApp)
+        application.root = FakeFrame(None)
+        application.client = None
+        application._row_value_vars = {}
+        application._pending_memory = []
+        application._screenshot = None
+        application._pending_log = []
+        application._pending_status = None
+        application._pending_screenshot = None
+        application._volume_dragging = False
+        application._sweep_active = False
+        application._sweep_points_pending = False
+        application._sweep_points_band = "80M"
+        application._current_mode = "LSB"
+        application._current_volume = -1
+        application._sweep_timeout_id = None
+        application._last_status = None
+        application._sweep_data = [(3_500_000, 10), (3_600_000, 20)]
+        application._sweep_freq_range = (3_500_000, 4_000_000)
+        application._sweep_marker_hz = None
+        application._sweep_restore_freq = None
+        application._sweep_mode = "LSB"
+        application.sweep_canvas = FakeCanvas()
+        application.volume_var = FakeVar()
+        application.freq_var = FakeVar()
+        application.band_var = FakeVar()
+        application.mode_var = FakeVar()
+        application.rssi_var = FakeVar()
+        application.smeter_var = FakeVar()
+        application.snr_var = FakeVar()
+        application.batt_var = FakeVar()
+        application.sweep_points_var = FakeVar()
+        application.sweep_progress_var = FakeVar()
+        application.log_text = FakeLogText()
+        application.log = lambda msg: None
+        application.root.after = lambda delay, fn=None: None
+        application.root.after_cancel = lambda tid: None
+        return application
+
+    def _status(self, khz):
+        from ats_mini_remote import protocol
+        return protocol.ReceiverStatus(frequency=khz, mode="LSB", band="80M")
+
+    def test_marker_follows_frequency_changes(self):
+        app = self._make_app()
+        # erster Status: Marke wird gezeichnet
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        self.assertEqual(len(app.sweep_canvas.lines), 1)
+        self.assertEqual(app._sweep_marker_hz, 3_600_000)
+        # dieselbe Frequenz: kein Neuzeichnen
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        self.assertEqual(len(app.sweep_canvas.lines), 1)
+        # neue Frequenz: Marke wandert mit
+        app._pending_status = self._status(3_700)
+        app._poll_main_thread()
+        self.assertEqual(len(app.sweep_canvas.lines), 2)
+        self.assertEqual(app._sweep_marker_hz, 3_700_000)
+
+    def test_no_draw_without_spectrum_data(self):
+        app = self._make_app()
+        app._sweep_data = None
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        self.assertEqual(len(app.sweep_canvas.lines), 0)
+
+    def test_no_draw_during_sweep(self):
+        app = self._make_app()
+        app._sweep_active = True
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        # waehrend des Sweeps zeichnet _sweep_on_status selbst
+        self.assertEqual(len(app.sweep_canvas.lines), 0)
+        self.assertEqual(app._sweep_marker_hz, None)
+
+    def test_marker_outside_range_is_not_drawn(self):
+        app = self._make_app()
+        app._pending_status = self._status(7_100)  # ausserhalb 3.5-4 MHz
+        app._poll_main_thread()
+        # kein Punkt im Diagrammbereich -> keine Linie, aber Marker merken
+        self.assertEqual(len(app.sweep_canvas.lines), 0)
+        self.assertEqual(app._sweep_marker_hz, 7_100_000)
+        # Rueckkehr in den Bereich zeichnet wieder
+        app._pending_status = self._status(3_800)
+        app._poll_main_thread()
+        self.assertEqual(len(app.sweep_canvas.lines), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

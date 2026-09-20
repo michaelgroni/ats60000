@@ -286,6 +286,7 @@ class RemoteApp:
             return
         self._sweep_index = 0
         self._sweep_data = []
+        self._sweep_marker_hz = None
         self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
         self._sweep_restore_freq = status.display_frequency_hz()
         # Bandbreite etwa auf die Messpunktschrittweite einstellen
@@ -471,6 +472,7 @@ class RemoteApp:
     def _sweep_really_finish(self):
         self._sweep_active = False
         self._sweep_disarm_timeout()
+        self._sweep_marker_hz = None
         self.sweep_start_button.config(state=tk.NORMAL)
         self.sweep_stop_button.config(state=tk.DISABLED)
         self.sweep_progress_var.set(self._sweep_message or "Fertig")
@@ -738,6 +740,12 @@ class RemoteApp:
             self.snr_var.set(f"{status.snr} dB")
             self.batt_var.set(f"{status.voltage:.2f} V")
             self._set_row_values(status)
+            # Frequenzmarke im Spektrum nachziehen, wenn die Frequenz
+            # geaendert wurde (ausserhalb des Sweeps, der selbst zeichnet)
+            if (not self._sweep_active and self._sweep_data
+                    and hz != self._sweep_marker_hz):
+                self._sweep_marker_hz = hz
+                self._sweep_draw()
 
         shot = getattr(self, "_pending_screenshot", None)
         if shot is not None:
@@ -764,6 +772,7 @@ class RemoteApp:
     _sweep_message: str = ""
     _sweep_restore_freq: int | None = None
     _sweep_mode: str = ""
+    _sweep_marker_hz: int | None = None
     _sweep_points_pending: bool = False
     _sweep_points_band: str = ""
 
