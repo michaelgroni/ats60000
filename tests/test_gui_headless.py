@@ -13,6 +13,7 @@ class FakeWidget:
     def __init__(self, parent, *args, **kwargs):
         self.parent = parent
         self.children = []
+        self.kwargs = dict(kwargs)
         if hasattr(parent, "children"):
             parent.children.append(self)
 
@@ -553,6 +554,43 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertEqual(len(main), 1)
 
     def test_axis_unit_is_visible(self):
+        app = self._make_app()
+        app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_freq_range = (3_500_000, 3_700_000)
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+    def test_smeter_canvas_bg_and_text_inside(self):
+        make_tkinter_mock()
+        for name in list(sys.modules):
+            if name.startswith("ats_mini_remote.app"):
+                del sys.modules[name]
+        from ats_mini_remote import app as app_mod
+        from ats_mini_remote import protocol
+        root = FakeFrame(None)
+        application = object.__new__(app_mod.RemoteApp)
+        application.root = root
+        application.client = None
+        application._row_value_vars = {}
+        application._pending_memory = []
+        application._screenshot = None
+        application._build_ui()
+        # Canvas-Hintergrund ist ab Programmstart die Zifferblattfarbe
+        self.assertEqual(application.smeter_canvas.kwargs.get("bg"),
+                         app_mod.RemoteApp._SMETER_FACE)
+        # Wertziffer liegt vollstaendig im Canvas (nicht abgeschnitten)
+        application._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M", rssi=64, snr=30)
+        application.smeter_metric_var = FakeVar()
+        application.smeter_metric_var.value = "Signalstärke"
+        application.smeter_canvas = FakeCanvas()
+        application._smeter_redraw()
+        h = application._SMETER_H
+        for coords, kw in application.smeter_canvas.texts:
+            if kw.get("text") == "64 dBµV":
+                self.assertLessEqual(coords[1] + 6, h)
+
+    def test_smeter_axis_labels_inside_canvas(self):
         app = self._make_app()
         app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
         app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]

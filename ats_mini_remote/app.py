@@ -206,8 +206,8 @@ class RemoteApp:
                             variable=self.smeter_metric_var,
                             command=self._smeter_redraw).grid(
                 row=0, column=i, sticky="w", padx=2)
-        self.smeter_canvas = tk.Canvas(meter, width=260, height=118,
-                                       bg=self._SMETER_BG,
+        self.smeter_canvas = tk.Canvas(meter, width=260, height=122,
+                                       bg=self._SMETER_FACE,
                                        highlightthickness=0)
         self.smeter_canvas.grid(row=1, column=0, columnspan=3,
                                sticky="we", pady=(4, 2))
@@ -841,14 +841,14 @@ class RemoteApp:
             self.log("Frequenz außerhalb des Bands")
 
     _SMETER_W = 260
-    _SMETER_H = 118
-    _SMETER_BG = "#1a1a1a"     # dunkles Gehaeuse
+    _SMETER_H = 122
+    _SMETER_BG = "#f4eedd"     # Hintergrund = Zifferblattfarbe, ab Start hell
     _SMETER_FACE = "#f4eedd"   # helles Zifferblatt
     _SMETER_TXT = "#111"
     _SMETER_TICK = "#000"
     _SMETER_RED = "#c00"       # roter Bereich am Skalenende
     _SMETER_NEEDLE = "#000"
-    _SMETER_PIVOT = (130, 94)   # Drehpunkt des Zeigers
+    _SMETER_PIVOT = (130, 98)   # Drehpunkt des Zeigers
     _SMETER_R = 60              # Skalenradius
     _SMETER_ARC = 180            # Zeichenauslenkung links->rechts (Grad)
     _SMETER_RED_FROM = 0.85     # ab hier Skalenbereich rot
@@ -948,7 +948,7 @@ class RemoteApp:
         canvas.create_oval(cx - 4, cy - 4, cx + 4, cy + 4,
                            fill=self._SMETER_TICK, outline="")
         # Wertziffer unter dem Drehpunkt, rot im Uebersteuerungsbereich
-        canvas.create_text(cx, cy + 14, text=text, anchor="n",
+        canvas.create_text(cx, cy + 9, text=text, anchor="n",
                            font=("", 9, "bold"),
                            fill=self._SMETER_RED if value >= self._SMETER_RED_FROM
                            else self._SMETER_TXT)
