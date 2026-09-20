@@ -214,6 +214,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._current_mode = "LSB"
         application._current_volume = -1
         application._sweep_timeout_id = None
+        application._sweep_peak = {}
+        application._sweep_ema = {}
+        application._sweep_prev = {}
         application._last_status = None
         application._sweep_data = [(3_500_000, 10), (3_600_000, 20)]
         application._sweep_freqs = [3_500_000, 3_600_000]
@@ -351,21 +354,30 @@ class SpectrumMarkerTest(unittest.TestCase):
 
     def test_peak_hold_follows_ema_and_previous(self):
         app = self._make_app()
-        # Start: EMA 0, vorheriger Wert 0
+        # pro Frequenz: EMA ohne Historie (alter/neuer Stand je halb),
+        # gemerkt wird max(vorheriger Messwert, EMA)
         app._sweep_update_peak(3_500_000, 20)
-        # EMA = (0+20)/2 = 10, Peak = max(0, 10) = 10
-        self.assertEqual(app._sweep_ema, 10)
+        self.assertEqual(app._sweep_ema[3_500_000], 10)
         self.assertEqual(app._sweep_peak[3_500_000], 10)
-        # zweiter Punkt: Messwert 60, alter EMA 10 -> EMA 35,
-        # Peak = max(vorheriger Messwert 20, EMA 35) = 35
-        app._sweep_update_peak(3_600_000, 60)
-        self.assertEqual(app._sweep_ema, 35)
-        self.assertEqual(app._sweep_peak[3_600_000], 35)
-        # dritter Punkt tief: EMA faellt, aber der vorherige Messwert
-        # haelt den Peak noch eine Weile oben
-        app._sweep_update_peak(3_700_000, 5)
-        self.assertEqual(app._sweep_ema, 20)
-        self.assertEqual(app._sweep_peak[3_700_000], 60)
+        app._sweep_update_peak(3_500_000, 60)
+        # EMA = (10+60)/2 = 35, Peak = max(20, 35) = 35
+        self.assertEqual(app._sweep_ema[3_500_000], 35)
+        self.assertEqual(app._sweep_peak[3_500_000], 35)
+        # Rueckblick in der Zeit: sinkt der Wert, haelt der Peak den
+        # frueheren Stand fest und klingt nur langsam ab
+        app._sweep_update_peak(3_500_000, 5)
+        self.assertEqual(app._sweep_ema[3_500_000], 20)
+        self.assertEqual(app._sweep_peak[3_500_000], 60)
+
+    def test_peak_hold_is_per_frequency(self):
+        app = self._make_app()
+        # Der Peak einer Frequenz darf nicht in Nachbarkanäle wandern
+        # (fruehere Version verschob Werte nach rechts)
+        app._sweep_update_peak(3_500_000, 80)
+        app._sweep_update_peak(3_600_000, 10)
+        self.assertEqual(app._sweep_peak[3_500_000], 40)
+        self.assertEqual(app._sweep_peak[3_600_000], 5)
+        self.assertNotIn(80, app._sweep_peak.values())
 
     def test_peak_drawn_as_pale_polygon(self):
         app = self._make_app()

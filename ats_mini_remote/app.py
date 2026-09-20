@@ -87,8 +87,8 @@ class RemoteApp:
         self._sweep_restore_freq: int | None = None
         self._sweep_timeout_id: str | None = None
         self._sweep_peak: dict[int, int] = {}
-        self._sweep_ema = 0
-        self._sweep_prev_rssi = 0
+        self._sweep_ema: dict[int, int] = {}
+        self._sweep_prev: dict[int, int] = {}
 
         self._build_ui()
         root.after(50, self._poll_main_thread)
@@ -352,9 +352,6 @@ class RemoteApp:
             return
         self._sweep_index = 0
         self._sweep_data = []
-        self._sweep_peak = {}
-        self._sweep_ema = 0
-        self._sweep_prev_rssi = 0
         self._sweep_marker_hz = None
         self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
         self._sweep_restore_freq = status.display_frequency_hz()
@@ -436,18 +433,22 @@ class RemoteApp:
         self._sweep_arm_timeout()
 
     def _sweep_update_peak(self, hz: int, rssi: int):
-        """Peak-Hold: neben dem Messwert den vorherigen Wert und einen
-        gleitenden Mittelwert mitfuehren.
+        """Peak-Hold je Frequenz: Rueckblick in der Zeit, nicht auf der
+        Frequenzachse.
 
-        Der Mittelwert ist ein EMA ohne Historie (alter und neuer Stand
-        gehen je zur Haelfte ein), decayt also mit jedem Punkt; das
-        Maximum beider wird pro Punkt gemerkt und blass ueber der
-        Flaeche gezeichnet, damit fruehere groessere Werte noch eine
-        Weile erkennbar bleiben.
+        Vorheriger Wert und gleitender Mittelwert werden pro Frequenz
+        gehalten und ueber Sweeps hinweg weitergefuehrt. Der Mittelwert
+        ist ein EMA ohne Historie (alter und neuer Stand gehen je zur
+        Haelfte ein) und decayt mit jeder erneuten Messung derselben
+        Frequenz; gemerkt wird das Maximum beider. Ein Signal, das in
+        frueheren Sweeps da war, bleibt so als blasse Flaeche an
+        seiner Frequenz sichtbar und klingt mit der Zeit ab.
         """
-        self._sweep_ema = (self._sweep_ema + rssi) // 2
-        self._sweep_peak[hz] = max(self._sweep_prev_rssi, self._sweep_ema)
-        self._sweep_prev_rssi = rssi
+        prev = self._sweep_prev.get(hz, 0)
+        ema = (self._sweep_ema.get(hz, 0) + rssi) // 2
+        self._sweep_ema[hz] = ema
+        self._sweep_peak[hz] = max(prev, ema)
+        self._sweep_prev[hz] = rssi
 
     def _sweep_arm_timeout(self):
         """Punkt überspringen, wenn das Radio die Frequenz nicht bestätigt."""
@@ -592,10 +593,12 @@ class RemoteApp:
     _SWEEP_TICK_FONT = ("", 7)
 
     def _sweep_scale_max(self) -> int:
-        """Achsenmaximum: groesster Messwert, auf Vielfache von 10
-        aufgerundet, aber nie kleiner als 60 dBuV."""
+        """Achsenmaximum: groesster Messwert oder Peak-Hold-Wert, auf
+        Vielfache von 10 aufgerundet, aber nie kleiner als 60 dBuV."""
         data = self._sweep_data or []
         peak = max((rssi for _hz, rssi in data), default=0)
+        hold = max(self._sweep_peak.values(), default=0)
+        peak = max(peak, hold)
         return max(self._SWEEP_AXIS_MIN, ((peak + 9) // 10) * 10)
 
     def _sweep_plot(self) -> _SweepPlot:
@@ -1003,8 +1006,8 @@ class RemoteApp:
     _sweep_mode: str = ""
     _sweep_marker_hz: int | None = None
     _sweep_peak: dict[int, int] = {}
-    _sweep_ema: int = 0
-    _sweep_prev_rssi: int = 0
+    _sweep_ema: dict[int, int] = {}
+    _sweep_prev: dict[int, int] = {}
     _sweep_points_pending: bool = False
     _sweep_points_band: str = ""
 
