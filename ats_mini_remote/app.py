@@ -275,10 +275,11 @@ class RemoteApp:
             status.mode) or status.mode
         mode_cmd = protocol.mode_steps(status.mode, sweep_mode)
         self._sweep_mode = sweep_mode
-        # Punkte gleichmaessig verteilen, jede einzeln aufs Schrittweiten-
-        # raster runden: Punktzahl bleibt erhalten, alle Frequenzen sind
-        # rasterkonform (auch wenn der Punktabstand auf keinem Raster liegt)
-        self._sweep_freqs, step_text = protocol.sweep_plan(
+        # Punkte gleichmaessig verteilen, jede einzeln aufs feinste
+        # Schrittweitenraster runden: Punktzahl bleibt erhalten, jede
+        # Messfrequenz liegt nah an ihrer Idealposition. Das Raster legt
+        # nur die firmwarekonformen Frequenzen fest, nicht den Abstand.
+        self._sweep_freqs, step_text, spacing_hz = protocol.sweep_plan(
             int(lo_khz) * 1000, int(hi_khz) * 1000, points, sweep_mode)
         step = protocol.step_hz(step_text)
         if len(self._sweep_freqs) < 2:
@@ -289,8 +290,9 @@ class RemoteApp:
         self._sweep_marker_hz = None
         self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
         self._sweep_restore_freq = status.display_frequency_hz()
-        # Bandbreite etwa auf die Messpunktschrittweite einstellen
-        bw_target = protocol.bandwidth_for_step(step / 1000, sweep_mode)
+        # Bandbreite nach dem Punktabstand waehlen (nicht nach dem Raster):
+        # kleinste Breite >= Punktabstand, sonst die groesste
+        bw_target = protocol.bandwidth_for_step(spacing_hz / 1000, sweep_mode)
         # Reihenfolge: Modus zuerst, denn doMode() der Firmware setzt
         # Schrittweite und Bandbreite auf die Modus-Defaults zurueck;
         # deshalb werden beide nach einem Moduswechsel immer gesetzt.

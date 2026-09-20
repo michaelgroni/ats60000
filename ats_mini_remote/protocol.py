@@ -380,28 +380,28 @@ def step_steps(current: str, target: str, mode: str) -> bytes:
 
 
 def sweep_plan(lo_hz: int, hi_hz: int, points: int,
-               mode: str) -> tuple[list[int], str]:
-    """Messfrequenzen und Schrittweite fuer einen Sweep planen.
+               mode: str) -> tuple[list[int], str, float]:
+    """Messfrequenzen, Schrittweite und Punktabstand fuer einen Sweep.
 
     Die Punkte werden gleichmaessig ueber das Band verteilt und einzeln
-    auf ein Schrittweitenraster gerundet: Die Punktzahl bleibt damit
-    erhalten, auch wenn der Punktabstand auf keinem Raster liegt (10M,
-    50 Punkte: Abstand ~34,7 kHz, groesstes SSB-Raster 10 kHz -- ein
-    Durchlauf auf dem 10k-Raster wuerde 171 Punkte liefern).
+    auf das feinste Schrittweitenraster gerundet: Die Punktzahl bleibt
+    erhalten, und jede Messfrequenz liegt so nah wie moeglich an ihrer
+    Idealposition (Rundungsfehler <= feinstes Raster / 2). Das Raster
+    beeinflusst die Messfrequenzen nicht weiter -- der F-Befehl ist
+    absolut --, es haelt die Frequenzen nur firmwarekonform.
 
-    Gewaehlt wird das groebste Raster, das noch feiner als der Punktabstand
-    ist (Rundungsfehler pro Punkt <= Raster/2, benachbarte Punkte bleiben
-    getrennt); existiert keines, das feinste (Punkte koennen dann
-    zusammenfallen und werden entfernt). Bandrandpunkte werden auf das
-    Raster in das Band hineingerundet.
+    Der Punktabstand (nicht das Raster) bestimmt die Bandbreite: Die
+    kleinste Breite >= Punktabstand wird gewaehlt, damit zwischen den
+    Messpunkten moeglichst nichts uebersehen wird; reicht keine aus,
+    die groesste.
 
-    Rueckgabe: (Frequenzliste aufsteigend, Schrittweiten-Text).
+    Rueckgabe: (Frequenzliste aufsteigend, Schrittweiten-Text,
+    Punktabstand in Hz).
     """
     entries = step_list(mode)
-    steps = sorted({step_hz(t) for t in entries})
+    step = min(step_hz(t) for t in entries)
+    text = next(t for t in entries if step_hz(t) == step)
     spacing = (hi_hz - lo_hz) / (points - 1) if points > 1 else float(hi_hz - lo_hz)
-    fitting = [s for s in steps if s <= spacing]
-    step = fitting[-1] if fitting else steps[0]
     freqs: list[int] = []
     for i in range(points):
         f = round((lo_hz + i * spacing) / step) * step
@@ -413,8 +413,7 @@ def sweep_plan(lo_hz: int, hi_hz: int, points: int,
             continue
         if not freqs or f != freqs[-1]:
             freqs.append(f)
-    text = next(t for t in entries if step_hz(t) == step)
-    return freqs, text
+    return freqs, text, spacing
 
 
 def aligned_sweep_freqs(lo_hz: int, hi_hz: int, step: int) -> list[int]:

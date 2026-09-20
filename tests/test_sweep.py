@@ -119,10 +119,10 @@ class StepSelectionTest(unittest.TestCase):
         self.assertEqual(protocol.step_hz("25"), 25)
 
 class SweepPlanTest(unittest.TestCase):
-    """sweep_plan: Punktzahl bleibt erhalten, Frequenzen auf dem Raster."""
+    """sweep_plan: Punktzahl bleibt erhalten, Punkte nah an Idealposition."""
 
     def _check(self, lo, hi, points, mode):
-        freqs, step_text = protocol.sweep_plan(lo, hi, points, mode)
+        freqs, step_text, spacing = protocol.sweep_plan(lo, hi, points, mode)
         step = protocol.step_hz(step_text)
         self.assertGreaterEqual(len(freqs), 2)
         self.assertLessEqual(len(freqs), points)
@@ -130,41 +130,47 @@ class SweepPlanTest(unittest.TestCase):
             self.assertEqual(f % step, 0, f"{f} nicht auf dem {step_text}-Raster")
             self.assertTrue(lo <= f <= hi, f"{f} ausserhalb [{lo}, {hi}]")
         self.assertEqual(freqs, sorted(set(freqs)))
-        return freqs, step_text
+        # Feinstes Raster -> Punkt liegt maximal Raster/2 von seiner
+        # Idealposition entfernt
+        self.assertLessEqual(step / 2, spacing or step)
+        return freqs, step_text, spacing
 
     def test_exact_point_count_10m(self):
-        # 10M (1.7 MHz), 50 Punkte: Abstand ~34,7 kHz, groesstes SSB-
-        # Raster 10 kHz. Frueher: Durchlauf ueber das Raster -> 171 Punkte.
-        freqs, step_text = self._check(28_000_000, 29_700_000, 50, "USB")
+        # 10M (1.7 MHz), 50 Punkte: Abstand ~34,7 kHz. Frueher lieferte
+        # der Raster-Durchlauf 171 Punkte; jetzt 50, aufs feinste
+        # SSB-Raster (10 Hz) gerundet
+        freqs, step_text, spacing = self._check(28_000_000, 29_700_000, 50, "USB")
         self.assertEqual(len(freqs), 50)
-        self.assertEqual(step_text, "10k")
+        self.assertEqual(step_text, "10")
+        # Positionsfehler je Punkt <= 5 Hz
+        for i, f in enumerate(freqs):
+            ideal = 28_000_000 + i * spacing
+            self.assertLessEqual(abs(f - ideal), 5)
 
     def test_exact_point_count_80m(self):
-        # 80M (500 kHz), 200 Punkte: Abstand ~2,5 kHz -> 1k-Raster,
-        # 200 Punkte (frueher je nach Strategie 101 oder 501)
-        freqs, step_text = self._check(3_500_000, 4_000_000, 200, "LSB")
+        # 80M (500 kHz), 200 Punkte: Abstand ~2,5 kHz, feinstes Raster 10 Hz
+        freqs, step_text, _sp = self._check(3_500_000, 4_000_000, 200, "LSB")
         self.assertEqual(len(freqs), 200)
-        self.assertEqual(step_text, "1k")
+        self.assertEqual(step_text, "10")
 
     def test_exact_point_count_31m(self):
-        # 31M (2 MHz), 60 Punkte: Abstand ~33,9 kHz -> 10k-Raster
-        freqs, step_text = self._check(9_000_000, 11_000_000, 60, "AM")
+        # 31M (2 MHz), 60 Punkte: Abstand ~33,9 kHz, feinstes AM-Raster 1k
+        freqs, step_text, _sp = self._check(9_000_000, 11_000_000, 60, "AM")
         self.assertEqual(len(freqs), 60)
-        self.assertEqual(step_text, "10k")
+        self.assertEqual(step_text, "1k")
 
-    def test_vhf_200k_grid(self):
-        # VHF, 100 Punkte: Abstand 444 kHz -> 200k-Raster, 100 Punkte
-        freqs, step_text = self._check(64_000_000, 108_000_000, 100, "FM")
+    def test_vhf_100_points(self):
+        # VHF, 100 Punkte: Abstand 444 kHz, feinstes FM-Raster 10k
+        freqs, step_text, _sp = self._check(64_000_000, 108_000_000, 100, "FM")
         self.assertEqual(len(freqs), 100)
-        self.assertEqual(step_text, "200k")
+        self.assertEqual(step_text, "10k")
 
     def test_band_edges_on_grid_inside_band(self):
         # Bandraender, die nicht auf dem Raster liegen, werden in das
-        # Band hineingerundet: ALL ab 150 kHz, 10-kHz-Raster -> 150 kHz
-        # bleibt (liegt auf dem Raster), das obere Ende wird
-        # heruntergerundet, nie ueberschritten
-        freqs, step_text = self._check(150_000, 1_150_000, 60, "AM")
-        self.assertEqual(step_text, "10k")
+        # Band hineingerundet: ALL ab 150 kHz, 1-kHz-Raster -> 150 kHz
+        # bleibt, das obere Ende wird heruntergerundet, nie ueberschritten
+        freqs, step_text, _sp = self._check(150_000, 1_150_000, 60, "AM")
+        self.assertEqual(step_text, "1k")
         self.assertEqual(freqs[0], 150_000)
         self.assertEqual(freqs[-1], 1_150_000)
 
@@ -172,8 +178,8 @@ class SweepPlanTest(unittest.TestCase):
         # Punktabstand feiner als das feinste Raster (nicht erreichbar
         # ueber die GUI-Klemmung, aber robust): Punkte koennen zusammen-
         # fallen und werden dann entfernt -- nie doppelt, nie ausserhalb
-        lo, hi = 3_500_000, 3_500_500   # 500 kHz Spanne, feinstes SSB-Raster 10 Hz
-        freqs, step_text = protocol.sweep_plan(lo, hi, 200, "LSB")
+        lo, hi = 3_500_000, 3_500_050   # 50 Hz Spanne, feinstes SSB-Raster 10 Hz
+        freqs, step_text, _sp = protocol.sweep_plan(lo, hi, 200, "LSB")
         step = protocol.step_hz(step_text)
         self.assertGreaterEqual(len(freqs), 2)
         self.assertLessEqual(len(freqs), 200)
