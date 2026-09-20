@@ -379,10 +379,33 @@ def step_steps(current: str, target: str, mode: str) -> bytes:
     return CMD_STEP_UP * fwd
 
 
-def step_for_spacing(spacing_hz: float, mode: str) -> str:
-    """Schrittweite, die der Messpunktschrittweite am naechsten liegt."""
+def step_for_points(lo_hz: int, hi_hz: int, points: int,
+                   mode: str) -> str:
+    """Schrittweite, deren Rasterpunktzahl der gewuenschten am naechsten ist.
+
+    Das Radio kann nur auf seinen Schrittweitenrastern messen; die
+    tatsaechliche Punktzahl weicht daher von der eingestellten ab. Frueher
+    wurde die dem idealen Punktabstand naechste Schrittweite gewaehlt --
+    das rundete oft auf ein feineres Raster und der Sweep bekam deutlich
+    mehr Punkte als bestellt (80M, 200 Punkte: Abstand 2,5 kHz, 'naechste'
+    Schrittweite 1 kHz -> 501 Punkte). Jetzt zaehlt die Punktzahl, die das
+    Raster im Band tatsaechlich liefert; bei Gleichstand gewinnt das
+    groebere Raster (weniger Punkte).
+    """
     entries = step_list(mode)
-    return min(entries, key=lambda t: abs(step_hz(t) - spacing_hz))
+    best: tuple[int, int, str] | None = None   # (|diff|, punktzahl, text)
+    for text in entries:
+        step = step_hz(text)
+        count = len(aligned_sweep_freqs(lo_hz, hi_hz, step))
+        if count < 2:
+            continue
+        candidate = (abs(count - points), count, text)
+        if best is None or candidate[:2] < best[:2]:
+            best = candidate
+    if best is not None:
+        return best[2]
+    # Kein Raster mit >= 2 Punkten im Band: feinstes Raster als Rueckfall
+    return min(entries, key=step_hz)
 
 
 def aligned_sweep_freqs(lo_hz: int, hi_hz: int, step: int) -> list[int]:
@@ -445,13 +468,17 @@ def bandwidth_for_step(step_khz: float, mode: str) -> str:
     Die Breite soll etwa der Schrittweite entsprechen; die kleinste
     verfuegbare Breite >= Schrittweite wird gewaehlt. 'Auto' wird
     vermieden, damit der Sweep mit einem festen Filter misst.
+    Reicht keine Bandbreite aus (Schrittweite groesser als alle
+    Filter), wird die groesste genommen -- Signale zwischen den
+    Messpunkten koennen dann zwar uebersehen werden, aber der
+    Sweep misst mit dem breitesten verfuegbaren Filter.
     """
     fm = mode.upper() == "FM"
     entries = [t for t in bandwidth_list(mode) if t.lower() != "auto"]
-    for text in entries:
-        if bandwidth_khz(text, fm) >= step_khz:
-            return text
-    return entries[-1]
+    big = [t for t in entries if bandwidth_khz(t, fm) >= step_khz]
+    if big:
+        return min(big, key=lambda t: bandwidth_khz(t, fm))
+    return max(entries, key=lambda t: bandwidth_khz(t, fm))
 
 
 def band_entry(band_name: str, current_hz: int = 0,

@@ -61,6 +61,20 @@ class BandwidthSelectionTest(unittest.TestCase):
     def test_fm_wide_step(self):
         self.assertEqual(protocol.bandwidth_for_step(100.0, "FM"), "110k")
 
+    def test_no_fitting_bandwidth_takes_largest(self):
+        # Schrittweite groesser als jeder Filter: groesste Bandbreite
+        # statt (FM-Liste ist absteigend sortiert!) der kleinsten
+        self.assertEqual(protocol.bandwidth_for_step(500.0, "FM"), "110k")
+        self.assertEqual(protocol.bandwidth_for_step(500.0, "SSB"
+                           .replace("SSB", "LSB")), "4.0k")
+        self.assertEqual(protocol.bandwidth_for_step(11.0, "AM"), "6.0k")
+
+    def test_fm_bandwidth_fallback_not_smallest(self):
+        # 200-kHz-Raster bei VHF: 110k ist die breiteste FM-Bandbreite,
+        # obwohl der Fallback frueher '40k' (Listenende) lieferte
+        self.assertEqual(protocol.bandwidth_for_step(200.0, "FM"), "110k")
+        self.assertEqual(protocol.bandwidth_for_step(400.0, "FM"), "110k")
+
     def test_steps_shortest_path(self):
         # AM: 6.0k (Index 6) -> 1.0k (Index 0): 1x w statt 6x W
         # AM-Liste ist zyklisch: 6.0k -> 1.0k ist EIN W-Schritt (wrap)
@@ -104,11 +118,43 @@ class StepSelectionTest(unittest.TestCase):
         self.assertEqual(protocol.step_hz("1M"), 1_000_000)
         self.assertEqual(protocol.step_hz("25"), 25)
 
-    def test_step_for_spacing_am(self):
-        # 31M, 60 Punkte: ~33,3 kHz Abstand -> 50k
-        self.assertEqual(protocol.step_for_spacing(33_333, "AM"), "50k")
-        # 41M, 60 Punkte: ~33,4 kHz -> 50k
-        self.assertEqual(protocol.step_for_spacing(33_400, "AM"), "50k")
+    def test_step_for_points_near_target(self):
+        # 80M (500 kHz Spanne), 200 Punkte: Raster 5k -> 101 Punkte
+        # (frueher: 1k-Raster -> 501 Punkte, weit ueber dem Wunsch)
+        self.assertEqual(
+            protocol.step_for_points(3_500_000, 4_000_000, 200, "LSB"), "5k")
+        # 31M (2 MHz), 60 Punkte: 50k -> 41 Punkte (naechstes Raster)
+        self.assertEqual(
+            protocol.step_for_points(9_000_000, 11_000_000, 60, "AM"), "50k")
+        # 31M, 250 Punkte: 9k -> 223 Punkte
+        self.assertEqual(
+            protocol.step_for_points(9_000_000, 11_000_000, 250, "AM"), "9k")
+
+    def test_step_for_points_exact_grid(self):
+        # VHF (44 MHz), 221 Punkte: 200k-Raster trifft es genau
+        self.assertEqual(
+            protocol.step_for_points(64_000_000, 108_000_000, 221, "FM"),
+            "200k")
+        # 40M (300 kHz), 301 Punkte: 1k-Raster trifft es genau
+        self.assertEqual(
+            protocol.step_for_points(7_000_000, 7_300_000, 301, "LSB"), "1k")
+
+    def test_step_for_points_tie_prefers_coarser(self):
+        # 80M, 151 Punkte: Raster 1k (501, diff 350) vs. 5k (101, diff 50)
+        # -> 5k. Und bei 300 Punkten: 1k (501, diff 201) vs. 5k (101,
+        # diff 199) -> 5k (naechster Rasterwert)
+        self.assertEqual(
+            protocol.step_for_points(3_500_000, 4_000_000, 300, "LSB"), "5k")
+
+    def test_step_for_points_never_far_over_target(self):
+        # Frueheres Verhalten (naechste Schrittweite zum Punktabstand):
+        # 80M, 200 Punkte -> 1k-Raster -> 501 Punkte. Neu: hoechstens das
+        # naechstgroebere Raster ueber dem Wunsch, hier 5k -> 101.
+        lo, hi = 3_500_000, 4_000_000
+        step_text = protocol.step_for_points(lo, hi, 200, "LSB")
+        count = len(protocol.aligned_sweep_freqs(lo, hi,
+                                                protocol.step_hz(step_text)))
+        self.assertLessEqual(count, 250)
 
     def test_step_shortest_path(self):
         # AM-Liste zyklisch: 1k -> 5k = 1x S, 1k -> 1M = 1x s (wrap)

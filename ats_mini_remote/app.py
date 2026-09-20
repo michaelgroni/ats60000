@@ -275,9 +275,10 @@ class RemoteApp:
             status.mode) or status.mode
         mode_cmd = protocol.mode_steps(status.mode, sweep_mode)
         self._sweep_mode = sweep_mode
-        spacing_hz = (hi_khz - lo_khz) * 1000 / (points - 1)
-        # Passende Schrittweite: Sweepraster = zugehoeriges Schrittweiten-Raster
-        step_text = protocol.step_for_spacing(spacing_hz, sweep_mode)
+        # Schrittweite so waehlen, dass die Punktzahl des Rasters der
+        # gewuenschten moeglichst nahe kommt (nicht grober noetig)
+        step_text = protocol.step_for_points(
+            int(lo_khz) * 1000, int(hi_khz) * 1000, points, sweep_mode)
         step = protocol.step_hz(step_text)
         self._sweep_freqs = protocol.aligned_sweep_freqs(
             int(lo_khz) * 1000, int(hi_khz) * 1000, step)
