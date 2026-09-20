@@ -116,6 +116,7 @@ class GuiSmokeTest(unittest.TestCase):
         application.root = root
         # Nur GUI-Aufbau ohne echten Client
         application.client = None
+        application._row_value_vars = {}
         application._pending_memory = []
         application._screenshot = None
         application._build_ui()

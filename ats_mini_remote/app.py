@@ -25,6 +25,7 @@ class RemoteApp:
         self._pending_memory: list[tuple[int, str, int, str]] = []
         self._screenshot: protocol.Screenshot | None = None
         self._volume_target = 0
+        self._row_value_vars: dict[str, tk.StringVar] = {}
 
         self._build_ui()
         root.after(200, self._poll_main_thread)
@@ -106,8 +107,12 @@ class RemoteApp:
             ttk.Label(ctrl, text=label).grid(row=row, column=0, sticky="w", padx=4, pady=2)
             ttk.Button(ctrl, text="◀", width=3,
                        command=lambda c=down: self.send(c)).grid(row=row, column=1, sticky="w")
+            value_var = tk.StringVar(value="–")
+            self._row_value_vars[label] = value_var
+            ttk.Label(ctrl, textvariable=value_var, width=12,
+                      font=("", 9, "bold")).grid(row=row, column=2, sticky="w", padx=8)
             ttk.Button(ctrl, text="▶", width=3,
-                       command=lambda c=up: self.send(c)).grid(row=row, column=2, sticky="w")
+                       command=lambda c=up: self.send(c)).grid(row=row, column=3, sticky="w")
 
         self.volume_var = tk.IntVar(value=0)
         self._volume_dragging = False
@@ -209,6 +214,22 @@ class RemoteApp:
             self.send(protocol.format_frequency_command(target, ssb))
         except ValueError:
             self.log("Frequenz außerhalb des Bands – Schritt ignoriert")
+
+    def _set_row_values(self, status: protocol.ReceiverStatus):
+        """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
+        vars_ = self._row_value_vars
+        if "Band" in vars_:
+            vars_["Band"].set(status.band)
+        if "Modus" in vars_:
+            vars_["Modus"].set(status.mode)
+        if "Schrittweite" in vars_:
+            vars_["Schrittweite"].set(status.step)
+        if "Bandbreite" in vars_:
+            vars_["Bandbreite"].set(status.bandwidth)
+        if "AGC/Attn" in vars_:
+            # Firmware: 0 = AGC ein, >0 = Attenuation (Wert = Index - 1)
+            vars_["AGC/Attn"].set("AGC ein" if status.agc == 0
+                                  else f"ATTN {status.agc - 1}")
 
     def set_frequency(self):
         raw = self.freq_entry_var.get().strip().replace(",", ".")
@@ -376,6 +397,7 @@ class RemoteApp:
             self.sigm_var.set(f"{status.rssi} dBµV / {status.snr} dB")
             self.batt_var.set(f"{status.voltage:.2f} V")
             self.vol_var.set(str(status.volume))
+            self._set_row_values(status)
 
         shot = getattr(self, "_pending_screenshot", None)
         if shot is not None:
