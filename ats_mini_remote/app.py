@@ -86,6 +86,9 @@ class RemoteApp:
         self._sweep_index = 0
         self._sweep_restore_freq: int | None = None
         self._sweep_timeout_id: str | None = None
+        self._sweep_peak: dict[int, int] = {}
+        self._sweep_ema = 0
+        self._sweep_prev_rssi = 0
 
         self._build_ui()
         root.after(50, self._poll_main_thread)
@@ -349,6 +352,9 @@ class RemoteApp:
             return
         self._sweep_index = 0
         self._sweep_data = []
+        self._sweep_peak = {}
+        self._sweep_ema = 0
+        self._sweep_prev_rssi = 0
         self._sweep_marker_hz = None
         self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
         self._sweep_restore_freq = status.display_frequency_hz()
@@ -429,6 +435,20 @@ class RemoteApp:
             return
         self._sweep_arm_timeout()
 
+    def _sweep_update_peak(self, hz: int, rssi: int):
+        """Peak-Hold: neben dem Messwert den vorherigen Wert und einen
+        gleitenden Mittelwert mitfuehren.
+
+        Der Mittelwert ist ein EMA ohne Historie (alter und neuer Stand
+        gehen je zur Haelfte ein), decayt also mit jedem Punkt; das
+        Maximum beider wird pro Punkt gemerkt und blass ueber der
+        Flaeche gezeichnet, damit fruehere groessere Werte noch eine
+        Weile erkennbar bleiben.
+        """
+        self._sweep_ema = (self._sweep_ema + rssi) // 2
+        self._sweep_peak[hz] = max(self._sweep_prev_rssi, self._sweep_ema)
+        self._sweep_prev_rssi = rssi
+
     def _sweep_arm_timeout(self):
         """Punkt überspringen, wenn das Radio die Frequenz nicht bestätigt."""
         self._sweep_disarm_timeout()
@@ -484,6 +504,7 @@ class RemoteApp:
             return
         self._sweep_disarm_timeout()
         self._sweep_data.append((expected_hz, status.rssi))
+        self._sweep_update_peak(expected_hz, status.rssi)
         self._sweep_index += 1
         done = self._sweep_index
         total = len(self._sweep_freqs)
@@ -632,8 +653,10 @@ class RemoteApp:
             self.sweep_canvas.create_line(x, plot.pad_t, x, plot.base_y,
                                           fill="#f80", width=2)
 
+    _SWEEP_PEAK_FILL = "#060"   # Peak-Hold: blasseres Gruen
+
     def _sweep_fill(self, plot: _SweepPlot, hz1: int, rssi1: int,
-                    hz2: int, rssi2: int):
+                    hz2: int, rssi2: int, color: str = "#0f0"):
         """Flaeche zwischen zwei Punkten bis zur Basislinie fuellen.
 
         Das Trapez ist die grafische lineare Interpolation: alle
@@ -646,7 +669,7 @@ class RemoteApp:
         y1, y2 = plot.fy(rssi1), plot.fy(rssi2)
         self.sweep_canvas.create_polygon(
             x1, y1, x2, y2, x2, plot.base_y, x1, plot.base_y,
-            fill="#0f0", outline="")
+            fill=color, outline="")
 
     def _sweep_draw(self):
         """Alles zeichnen: nach Sweep-Ende, Band- oder Frequenzwechsel.
@@ -673,6 +696,13 @@ class RemoteApp:
                 rssi = _interp_rssi(freqs_all, measured, hz)
                 if rssi is not None:
                     values.append((hz, rssi))
+        # Peak-Hold-Flaeche (blass) unter der Hauptflaeche: sichtbar bleibt
+        # sie nur, wo fruehere Werte ueber dem aktuellen Spektrum lagen
+        peaks = [(hz, self._sweep_peak.get(hz, rssi))
+                 for hz, rssi in values]
+        for (hz1, rssi1), (hz2, rssi2) in zip(peaks, peaks[1:]):
+            self._sweep_fill(plot, hz1, rssi1, hz2, rssi2,
+                             color=self._SWEEP_PEAK_FILL)
         for (hz1, rssi1), (hz2, rssi2) in zip(values, values[1:]):
             self._sweep_fill(plot, hz1, rssi1, hz2, rssi2)
         self._sweep_draw_marker(plot)
@@ -701,12 +731,18 @@ class RemoteApp:
                 prev = j
                 break
         rssi = measured[hz]
+        peak = self._sweep_peak.get(hz, rssi)
         if prev is None:
             # kein linker Nachbar: einseitige Interpolation, die
             # Flaeche links davon liegt flach auf dem Messwert
+            self._sweep_fill(plot, plot.lo, peak, hz, peak,
+                             color=self._SWEEP_PEAK_FILL)
             self._sweep_fill(plot, plot.lo, rssi, hz, rssi)
         else:
             hz_p = freqs[prev]
+            peak_p = self._sweep_peak.get(hz_p, measured[hz_p])
+            self._sweep_fill(plot, hz_p, peak_p, hz, peak,
+                             color=self._SWEEP_PEAK_FILL)
             self._sweep_fill(plot, hz_p, measured[hz_p], hz, rssi)
 
     def _sweep_click(self, event):
@@ -966,6 +1002,9 @@ class RemoteApp:
     _sweep_restore_freq: int | None = None
     _sweep_mode: str = ""
     _sweep_marker_hz: int | None = None
+    _sweep_peak: dict[int, int] = {}
+    _sweep_ema: int = 0
+    _sweep_prev_rssi: int = 0
     _sweep_points_pending: bool = False
     _sweep_points_band: str = ""
 

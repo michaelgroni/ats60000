@@ -349,6 +349,60 @@ class SpectrumMarkerTest(unittest.TestCase):
         texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("80", texts)   # neue Achse bis 80
 
+    def test_peak_hold_follows_ema_and_previous(self):
+        app = self._make_app()
+        # Start: EMA 0, vorheriger Wert 0
+        app._sweep_update_peak(3_500_000, 20)
+        # EMA = (0+20)/2 = 10, Peak = max(0, 10) = 10
+        self.assertEqual(app._sweep_ema, 10)
+        self.assertEqual(app._sweep_peak[3_500_000], 10)
+        # zweiter Punkt: Messwert 60, alter EMA 10 -> EMA 35,
+        # Peak = max(vorheriger Messwert 20, EMA 35) = 35
+        app._sweep_update_peak(3_600_000, 60)
+        self.assertEqual(app._sweep_ema, 35)
+        self.assertEqual(app._sweep_peak[3_600_000], 35)
+        # dritter Punkt tief: EMA faellt, aber der vorherige Messwert
+        # haelt den Peak noch eine Weile oben
+        app._sweep_update_peak(3_700_000, 5)
+        self.assertEqual(app._sweep_ema, 20)
+        self.assertEqual(app._sweep_peak[3_700_000], 60)
+
+    def test_peak_drawn_as_pale_polygon(self):
+        app = self._make_app()
+        # Peak-Hold-Flaeche: blass Gruen (#060) unter der Hauptflaeche,
+        # nur sichtbar, wo fruehere Werte groesser waren
+        app._sweep_data = [(3_500_000, 40), (3_600_000, 20)]
+        app._sweep_freqs = [3_500_000, 3_600_000]
+        app._sweep_peak = {3_500_000: 40, 3_600_000: 30}
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        pale = [p for p in app.sweep_canvas.polygons
+                if p[1].get("fill") == "#060"]
+        main = [p for p in app.sweep_canvas.polygons
+                if p[1].get("fill") == "#0f0"]
+        self.assertEqual(len(pale), 1)   # ein Peak-Trapez
+        self.assertEqual(len(main), 1)   # ein Haupt-Trapez
+        # Peak-Trapez liegt im Voll-Draw unter dem Haupt-Trapez
+        self.assertEqual(len(app.sweep_canvas.polygons), 2)
+
+    def test_peak_drawn_incrementally(self):
+        app = self._make_app()
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_data = []
+        app._sweep_active = True
+        canvas = app.sweep_canvas
+        # erster Messpunkt (3.5 MHz verpasst): Peak- und Hauptflaeche
+        # vom linken Rand bis zum Messpunkt
+        app._sweep_data.append((3_600_000, 40))
+        app._sweep_peak = {3_600_000: 40}
+        app._sweep_draw_incr(3_600_000)
+        pale = [p for p in canvas.polygons
+                if p[1].get("fill") == "#060"]
+        main = [p for p in canvas.polygons
+                if p[1].get("fill") == "#0f0"]
+        self.assertEqual(len(pale), 1)
+        self.assertEqual(len(main), 1)
+
     def test_no_draw_without_spectrum_data(self):
         app = self._make_app()
         app._sweep_data = None
