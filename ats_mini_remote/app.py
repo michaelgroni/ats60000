@@ -275,13 +275,12 @@ class RemoteApp:
             status.mode) or status.mode
         mode_cmd = protocol.mode_steps(status.mode, sweep_mode)
         self._sweep_mode = sweep_mode
-        # Schrittweite so waehlen, dass die Punktzahl des Rasters der
-        # gewuenschten moeglichst nahe kommt (nicht grober noetig)
-        step_text = protocol.step_for_points(
+        # Punkte gleichmaessig verteilen, jede einzeln aufs Schrittweiten-
+        # raster runden: Punktzahl bleibt erhalten, alle Frequenzen sind
+        # rasterkonform (auch wenn der Punktabstand auf keinem Raster liegt)
+        self._sweep_freqs, step_text = protocol.sweep_plan(
             int(lo_khz) * 1000, int(hi_khz) * 1000, points, sweep_mode)
         step = protocol.step_hz(step_text)
-        self._sweep_freqs = protocol.aligned_sweep_freqs(
-            int(lo_khz) * 1000, int(hi_khz) * 1000, step)
         if len(self._sweep_freqs) < 2:
             self.log("Band zu schmal für diese Schrittweite – Sweep nicht möglich")
             return

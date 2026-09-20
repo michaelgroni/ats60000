@@ -379,33 +379,42 @@ def step_steps(current: str, target: str, mode: str) -> bytes:
     return CMD_STEP_UP * fwd
 
 
-def step_for_points(lo_hz: int, hi_hz: int, points: int,
-                   mode: str) -> str:
-    """Schrittweite, deren Rasterpunktzahl der gewuenschten am naechsten ist.
+def sweep_plan(lo_hz: int, hi_hz: int, points: int,
+               mode: str) -> tuple[list[int], str]:
+    """Messfrequenzen und Schrittweite fuer einen Sweep planen.
 
-    Das Radio kann nur auf seinen Schrittweitenrastern messen; die
-    tatsaechliche Punktzahl weicht daher von der eingestellten ab. Frueher
-    wurde die dem idealen Punktabstand naechste Schrittweite gewaehlt --
-    das rundete oft auf ein feineres Raster und der Sweep bekam deutlich
-    mehr Punkte als bestellt (80M, 200 Punkte: Abstand 2,5 kHz, 'naechste'
-    Schrittweite 1 kHz -> 501 Punkte). Jetzt zaehlt die Punktzahl, die das
-    Raster im Band tatsaechlich liefert; bei Gleichstand gewinnt das
-    groebere Raster (weniger Punkte).
+    Die Punkte werden gleichmaessig ueber das Band verteilt und einzeln
+    auf ein Schrittweitenraster gerundet: Die Punktzahl bleibt damit
+    erhalten, auch wenn der Punktabstand auf keinem Raster liegt (10M,
+    50 Punkte: Abstand ~34,7 kHz, groesstes SSB-Raster 10 kHz -- ein
+    Durchlauf auf dem 10k-Raster wuerde 171 Punkte liefern).
+
+    Gewaehlt wird das groebste Raster, das noch feiner als der Punktabstand
+    ist (Rundungsfehler pro Punkt <= Raster/2, benachbarte Punkte bleiben
+    getrennt); existiert keines, das feinste (Punkte koennen dann
+    zusammenfallen und werden entfernt). Bandrandpunkte werden auf das
+    Raster in das Band hineingerundet.
+
+    Rueckgabe: (Frequenzliste aufsteigend, Schrittweiten-Text).
     """
     entries = step_list(mode)
-    best: tuple[int, int, str] | None = None   # (|diff|, punktzahl, text)
-    for text in entries:
-        step = step_hz(text)
-        count = len(aligned_sweep_freqs(lo_hz, hi_hz, step))
-        if count < 2:
+    steps = sorted({step_hz(t) for t in entries})
+    spacing = (hi_hz - lo_hz) / (points - 1) if points > 1 else float(hi_hz - lo_hz)
+    fitting = [s for s in steps if s <= spacing]
+    step = fitting[-1] if fitting else steps[0]
+    freqs: list[int] = []
+    for i in range(points):
+        f = round((lo_hz + i * spacing) / step) * step
+        if f < lo_hz:
+            f = ((lo_hz + step - 1) // step) * step
+        if f > hi_hz:
+            f = (hi_hz // step) * step
+        if f < lo_hz or f > hi_hz:
             continue
-        candidate = (abs(count - points), count, text)
-        if best is None or candidate[:2] < best[:2]:
-            best = candidate
-    if best is not None:
-        return best[2]
-    # Kein Raster mit >= 2 Punkten im Band: feinstes Raster als Rueckfall
-    return min(entries, key=step_hz)
+        if not freqs or f != freqs[-1]:
+            freqs.append(f)
+    text = next(t for t in entries if step_hz(t) == step)
+    return freqs, text
 
 
 def aligned_sweep_freqs(lo_hz: int, hi_hz: int, step: int) -> list[int]:
