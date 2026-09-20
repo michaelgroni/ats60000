@@ -149,8 +149,8 @@ class RemoteApp:
         self.memory_tree.grid(row=1, column=0, columnspan=5, sticky="we", padx=4, pady=4)
         mem.columnconfigure(0, weight=1)
 
-        # Bandpegel (Sweep)
-        sweep = ttk.LabelFrame(outer, text="Bandpegel")
+        # Spektrum (Sweep)
+        sweep = ttk.LabelFrame(outer, text="Spektrum")
         sweep.pack(fill=tk.X, **pad)
         self.sweep_points_var = tk.StringVar(value="60")
         ttk.Label(sweep, text="Messpunkte:").grid(row=0, column=0, padx=4, pady=2)
@@ -210,6 +210,7 @@ class RemoteApp:
             return
         self.set_state(True)
         self.send(protocol.CMD_TOGGLE_LOG)
+        self._sweep_points_pending = True
         self.log(f"Verbunden mit {host}:{port}, Monitor aktiviert")
 
     def disconnect(self):
@@ -244,7 +245,7 @@ class RemoteApp:
         except ValueError:
             self.log("Frequenz außerhalb des Bands – Schritt ignoriert")
 
-    # -------------------------------------------------- Bandpegel (Sweep)
+    # -------------------------------------------------- Spektrum (Sweep)
 
     def sweep_start(self):
         if not self.client.is_connected():
@@ -456,6 +457,18 @@ class RemoteApp:
             y = height - 4 - (rssi / rssi_max) * (height - 8)
             canvas.create_rectangle(x - 1, y, x + 1, height - 4,
                                    fill="#0f0", outline="")
+        # Eingestellte Frequenz als vertikale Markierung; waehrend des
+        # Sweeps ist das die Restore-Frequenz, da das Radio gerade das
+        # Band durchfaehrt.
+        if self._sweep_active and self._sweep_restore_freq is not None:
+            current_hz = self._sweep_restore_freq
+        else:
+            status = self._last_status
+            current_hz = status.display_frequency_hz() if status else None
+        if current_hz is not None and lo <= current_hz <= hi:
+            x = (current_hz - lo) / span * width
+            canvas.create_line(x, 2, x, height - 4,
+                               fill="#f80", width=2)
 
     def _sweep_click(self, event):
         """Klick im Diagramm: zur angeklickten Frequenz tunen."""
@@ -487,6 +500,13 @@ class RemoteApp:
                 vars_["Frequenz"].set(f"{hz / 1e3:.3f} kHz")
         if "Band" in vars_:
             vars_["Band"].set(status.band)
+        # Nach Verbindung und Bandwechsel sinnvolle Messpunktzahl waehlen
+        if (self._sweep_points_pending
+                or status.band != self._sweep_points_band):
+            self._sweep_points_band = status.band
+            points = protocol.suggested_sweep_points(status.band, status.mode)
+            self.sweep_points_var.set(str(points))
+            self._sweep_points_pending = False
         if "Modus" in vars_:
             vars_["Modus"].set(status.mode)
         if "Schrittweite" in vars_:
@@ -692,6 +712,9 @@ class RemoteApp:
     _sweep_setups: list = []
     _sweep_applied: list = []
     _sweep_message: str = ""
+    _sweep_restore_freq: int | None = None
+    _sweep_points_pending: bool = False
+    _sweep_points_band: str = ""
 
 
 def main():

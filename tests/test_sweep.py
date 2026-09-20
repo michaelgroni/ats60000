@@ -132,5 +132,25 @@ class StepSelectionTest(unittest.TestCase):
 
 
 
+
+
+class SuggestedPointsTest(unittest.TestCase):
+    def test_vhf_gets_more_points(self):
+        # VHF: 44 MHz Spanne -> 200 (Deckelung)
+        self.assertEqual(protocol.suggested_sweep_points("VHF", "FM"), 200)
+
+    def test_small_band_gets_minimum(self):
+        # 15M: 200 kHz Spanne -> Minimum 10
+        self.assertEqual(protocol.suggested_sweep_points("15M", "AM"), 10)
+
+    def test_medium_band(self):
+        # 31M: 2 MHz -> 21 Punkte
+        self.assertEqual(protocol.suggested_sweep_points("31M", "AM"), 21)
+
+    def test_unknown_band_fallback(self):
+        self.assertEqual(protocol.suggested_sweep_points("XX", "AM"), 60)
+
+
+
 if __name__ == "__main__":
     unittest.main()

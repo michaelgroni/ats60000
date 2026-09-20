@@ -405,6 +405,24 @@ def bandwidth_for_step(step_khz: float, mode: str) -> str:
     return entries[-1]
 
 
+def suggested_sweep_points(band: str, mode: str) -> int:
+    """Sinnvolle Messpunktzahl fuer das Band (10..200).
+
+    Ziel: ein Rasterabstand, der mit einer verfuegbaren Schrittweite
+    gut aufloesen laesst. Breite Baender bekommen mehr Punkte, aber
+    hoechstens 200 (Obergrenze der Spinbox). VHF (44 MHz Spanne)
+    benoetigt deutlich mehr Punkte als ein 500-kHz-Teilband.
+    """
+    rng = band_range(band, mode)
+    if rng is None:
+        return 60
+    lo, hi = rng
+    span_khz = hi - lo
+    # ~100 kHz Rasterabstand als Ziel; min 10, max 200
+    points = int(span_khz / 100) + 1
+    return max(10, min(200, points))
+
+
 def sweep_points_for_band(band: str, mode: str,
                           current_hz: int = 0) -> tuple[int, int] | None:
     """Messbereich fuer einen Sweep: (min_kHz, max_kHz).
