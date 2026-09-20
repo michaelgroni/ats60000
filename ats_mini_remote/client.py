@@ -15,6 +15,14 @@ from typing import Callable
 from . import protocol
 
 
+_HEX_CHARS = set("0123456789abcdefABCDEF")
+
+
+def _is_hex(text: str) -> bool:
+    """True wenn der Text ausschliesslich Hex-Ziffern enthaelt."""
+    return bool(text) and all(c in _HEX_CHARS for c in text)
+
+
 class RemoteClient:
     """Verwaltung der TCP-Verbindung zum Empfänger (Port 60000)."""
 
@@ -69,8 +77,13 @@ class RemoteClient:
         eine Hexzeile (bottom-up). Der Leser-Thread sammelt die Zeilen und
         übergibt das dekodierte Bild, sobald die letzte Pixelzeile da ist.
         """
+        # Firmware schaltet bei 'C' den Statusmonitor ab; der Client
+        # schaltet ihn nach dem Empfang automatisch wieder ein. Vor dem
+        # Header koennen noch Monitorzeilen unterwegs sein -- sie werden
+        # uebersprungen, bis die Hex-Headerzeile ankommt.
         self._screenshot_lines = []
         self._screenshot_target_rows = 0
+        self._screenshot_skipped = 0
         self._collecting_screenshot = True
         if self._on_screenshot_progress is not None:
             self._on_screenshot_progress(0, 0)
@@ -187,6 +200,15 @@ class RemoteClient:
             if len(text) > self._SCREENSHOT_MAX_LINE_CHARS:
                 self._abort_screenshot("Zeile zu lang")
                 return
+            if self._screenshot_target_rows == 0:
+                # Vor dem Header: Monitorzeilen (CSV, kein Hex) ueberspringen;
+                # sie waren beim Absenden von 'C' schon unterwegs. Sicherheits-
+                # begrenzung gegen Endlos-Skippen durch eine boese Gegenseite.
+                if not _is_hex(text):
+                    self._screenshot_skipped += 1
+                    if self._screenshot_skipped > 16:
+                        self._abort_screenshot("kein Header gefunden")
+                    return
             self._screenshot_lines.append(text)
             if self._screenshot_target_rows == 0 and self._screenshot_lines:
                 header_hex = self._screenshot_lines[0].strip()
@@ -211,6 +233,13 @@ class RemoteClient:
                 self._collecting_screenshot = False
                 lines = self._screenshot_lines[:self._screenshot_target_rows]
                 self._screenshot_lines = []
+                # Firmware schaltet den Monitor bei 'C' ab: wieder
+                # einschalten, sonst bleibt die Verbindung still und
+                # laeuft spaeter in den Empfangs-Timeout.
+                try:
+                    self.send(protocol.CMD_TOGGLE_LOG)
+                except RuntimeError:
+                    pass
                 if self._on_screenshot is not None:
                     try:
                         self._on_screenshot(protocol.decode_screenshot(lines))

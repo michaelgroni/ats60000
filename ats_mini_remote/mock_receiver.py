@@ -289,6 +289,8 @@ class MockHandler(socketserver.BaseRequestHandler):
             elif key == b"t":
                 state.log_on = not state.log_on
             elif line == b"C":
+                # wie Firmware Remote.cpp case 'C': Monitor abschalten
+                state.log_on = False
                 self.send(("\r\n" + state.screenshot_hex()).encode("ascii"))
             else:
                 self.cmd_key(line)

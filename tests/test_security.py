@@ -142,7 +142,10 @@ class MaliciousServerConnectionTest(unittest.TestCase):
 
         def send_garbage(conn):
             conn.recv(16)   # warten, bis der Client 'C' anfordert
-            conn.sendall(b"\r\nZZZZnothex\r\n")
+            # einzelne Nicht-Hex-Zeilen werden als Monitorzeilen uebersprungen;
+            # erst ab der Skip-Begrenzung bricht der Client ab
+            garbage = b"\r\nZZZZnothex\r\n" * 20
+            conn.sendall(garbage)
             threading.Event().wait(2)   # Verbindung offen halten
 
         port = self._serve(ready, send_garbage)
@@ -267,3 +270,68 @@ class ScreenshotProgressTest(unittest.TestCase):
             self.assertEqual(progress[-1][0], progress[-1][1])
         finally:
             server.server_close()
+
+
+class ScreenshotWithMonitorRaceTest(unittest.TestCase):
+    """Screenshot trotz noch laufender Monitorzeilen (Race wie am Geraet).
+
+    Die Firmware sendet alle 500 ms eine Statuszeile; beim 'C'-Befehl
+    ist fast immer noch eine unterwegs. Der Client muss sie vor dem
+    Hex-Header ueberspringen und danach den Monitor (den die Firmware
+    bei 'C' abschaltet) automatisch wieder einschalten.
+    """
+
+    def test_monitor_line_before_header_is_skipped(self):
+        import threading as _th
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        ready = _th.Event()
+
+        from ats_mini_remote import mock_receiver
+
+        def run():
+            conn, _ = server.accept()
+            ready.set()
+            try:
+                conn.recv(16)          # 'C' abwarten
+                # 1) Monitorzeile, die noch unterwegs war
+                state = mock_receiver.MockState()
+                conn.sendall(state.status_csv())
+                # 2) der eigentliche Screenshot
+                conn.sendall(("\r\n" + state.screenshot_hex()).encode("ascii"))
+                # 3) Monitor bleibt aus (wie Firmware) -> Client muss
+                #    selbst wieder einschalten ('t'); kurz offen halten
+                conn.settimeout(3)
+                while True:
+                    data = conn.recv(16)
+                    if not data or b"t" in data:
+                        break
+            except OSError:
+                pass
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                server.close()
+
+        _th.Thread(target=run, daemon=True).start()
+        ready.wait(2)
+
+        logs = []
+        screenshots = []
+        client = RemoteClient(on_line=logs.append,
+                              on_screenshot=screenshots.append)
+        client.connect("127.0.0.1", port)
+        client.request_screenshot()
+        for _ in range(200):
+            if screenshots:
+                break
+            _th.Event().wait(0.02)
+        client.disconnect()
+        self.assertTrue(screenshots, "Screenshot muss trotz Monitorzeile ankommen")
+        self.assertFalse(any("abgebrochen" in e for e in logs),
+                         f"logs={logs}")
