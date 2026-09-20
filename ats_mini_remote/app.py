@@ -309,7 +309,15 @@ class RemoteApp:
             return
         hz = status.display_frequency_hz()
         step_hz = protocol.step_size_hz(status)
-        target = hz + direction * step_hz
+        # Ziel muss durch die Schrittweite teilbar sein: Liegt die aktuelle
+        # Frequenz daneben (z. B. nach SSB-BFO-Feinabstimmung oder manueller
+        # Eingabe), springt der Schritt auf das naechste Vielfache in
+        # Klickrichtung, statt das Raster weiter zu verfehlen.
+        if hz % step_hz == 0:
+            target = hz + direction * step_hz
+        else:
+            lower = (hz // step_hz) * step_hz
+            target = lower + step_hz if direction > 0 else lower
         ssb = status.mode in ("LSB", "USB")
         try:
             self.send(protocol.format_frequency_command(target, ssb))

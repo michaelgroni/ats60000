@@ -1,8 +1,10 @@
 """Tests für die kontextsichere Frequenzsteuerung (tune über F-Befehl)."""
 
+import sys
 import unittest
 
 from ats_mini_remote import protocol
+from tests.test_gui_headless import make_tkinter_mock
 
 
 class StepHzTest(unittest.TestCase):
@@ -43,6 +45,40 @@ class TuneCommandTest(unittest.TestCase):
         self.assertEqual(hz, 3_700_150)
         cmd = protocol.format_frequency_command(hz + 100, ssb=True)
         self.assertEqual(cmd, b"F3700250\r\n")
+
+    def test_tune_snaps_to_step_grid(self):
+        """tune() muss auf Vielfache der Schrittweite landen.
+
+        Liegt die aktuelle Frequenz auf dem Raster, ist es der normale
+        Schritt; liegt sie daneben (BFO, manuelle Eingabe), springt der
+        Schritt auf das naechste Vielfache in Klickrichtung.
+        """
+        make_tkinter_mock()
+        for name in list(sys.modules):
+            if name.startswith("ats_mini_remote.app"):
+                del sys.modules[name]
+        from ats_mini_remote import app as app_mod
+        app = object.__new__(app_mod.RemoteApp)
+        app.log = lambda msg: None
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+
+        # auf dem Raster (5 kHz): normaler Schritt
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M", step="5k")
+        app.tune(+1)
+        self.assertEqual(sent[-1], b"F3605000\r\n")
+        app.tune(-1)
+        self.assertEqual(sent[-1], b"F3595000\r\n")
+
+        # neben dem Raster (3.602.017 Hz): naechstes Vielfaches in
+        # Klickrichtung -- Up auf 3.605 MHz, Down auf 3.600 MHz
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_602, bfo=17, mode="AM", band="80M", step="5k")
+        app.tune(+1)
+        self.assertEqual(sent[-1], b"F3605000\r\n")
+        app.tune(-1)
+        self.assertEqual(sent[-1], b"F3600000\r\n")
 
 
 if __name__ == "__main__":
