@@ -7,7 +7,7 @@ from ats_mini_remote import protocol
 
 class BandRangeTest(unittest.TestCase):
     def test_known_bands(self):
-        self.assertEqual(protocol.band_range("VHF", "FM"), (6400, 10800))
+        self.assertEqual(protocol.band_range("VHF", "FM"), (64000, 108000))
         self.assertEqual(protocol.band_range("31M", "AM"), (9000, 11000))
         self.assertEqual(protocol.band_range("40M", "LSB"), (7000, 7300))
         self.assertEqual(protocol.band_range("MW1", "AM"), (150, 1800))
@@ -15,7 +15,8 @@ class BandRangeTest(unittest.TestCase):
     def test_mode_fallback(self):
         # Modus weicht ab (z. B. nach Moduswechsel) -> Bandgrenzen
         # gelten trotzdem
-        self.assertEqual(protocol.band_range("VHF", "AM"), (6400, 10800))
+        # FM-Grenzen sind auch bei abweichendem Modus in kHz
+        self.assertEqual(protocol.band_range("VHF", "AM"), (64000, 108000))
 
     def test_unknown_band(self):
         self.assertIsNone(protocol.band_range("XX", "AM"))

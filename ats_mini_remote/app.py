@@ -30,6 +30,7 @@ class RemoteApp:
         self._sweep_freqs: list[int] = []
         self._sweep_index = 0
         self._sweep_restore_freq: int | None = None
+        self._sweep_timeout_id: str | None = None
 
         self._build_ui()
         root.after(200, self._poll_main_thread)
@@ -300,6 +301,32 @@ class RemoteApp:
             # Frequenz außerhalb des Bands (Rundung) → Punkt überspringen
             self._sweep_index += 1
             self.root.after(30, self._sweep_next)
+            return
+        self._sweep_arm_timeout()
+
+    def _sweep_arm_timeout(self):
+        """Punkt überspringen, wenn das Radio die Frequenz nicht bestätigt."""
+        self._sweep_disarm_timeout()
+        # 3 Monitortakte: sonst hat das Radio die Frequenz abgelehnt
+        # (z. B. Rundung am Bandrand) oder der Status bleibt aus.
+        self._sweep_timeout_id = self.root.after(1500, self._sweep_timeout)
+
+    def _sweep_disarm_timeout(self):
+        if self._sweep_timeout_id is not None:
+            self.root.after_cancel(self._sweep_timeout_id)
+            self._sweep_timeout_id = None
+
+    def _sweep_timeout(self):
+        self._sweep_timeout_id = None
+        if not self._sweep_active:
+            return
+        hz = self._sweep_freqs[self._sweep_index] \
+            if self._sweep_index < len(self._sweep_freqs) else None
+        self.log(f"Keine Bestätigung für {hz / 1000:.1f} kHz – Punkt übersprungen")
+        self._sweep_index += 1
+        self.sweep_progress_var.set(
+            f"{self._sweep_index}/{len(self._sweep_freqs)}")
+        self._sweep_next()
 
     def _sweep_on_status(self, status: protocol.ReceiverStatus):
         """Wird aus on_status gerufen: misst den Punkt, fährt fort."""
@@ -311,6 +338,7 @@ class RemoteApp:
         # Status bestätigt die Ziel Frequenz erst, wenn sie übernommen wurde
         if expected_hz is None or abs(actual_hz - expected_hz) > 1000:
             return
+        self._sweep_disarm_timeout()
         self._sweep_data.append((expected_hz, status.rssi))
         self._sweep_index += 1
         done = self._sweep_index
@@ -326,6 +354,7 @@ class RemoteApp:
 
     def _sweep_finish(self, message: str):
         self._sweep_active = False
+        self._sweep_disarm_timeout()
         self.sweep_start_button.config(state=tk.NORMAL)
         self.sweep_stop_button.config(state=tk.DISABLED)
         self.sweep_progress_var.set(message)
@@ -585,6 +614,7 @@ class RemoteApp:
     _pending_log: list[str] = []
     _pending_status: protocol.ReceiverStatus | None = None
     _pending_screenshot: protocol.Screenshot | None = None
+    _sweep_timeout_id: str | None = None
 
 
 def main():

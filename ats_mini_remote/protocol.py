@@ -123,10 +123,13 @@ def parse_memory_line(line: str) -> tuple[int, str, int, str] | None:
     return slot, fields[1], freq, fields[3]
 
 
-# Bandtabelle der Firmware (Menu.cpp: bands[]), kHz
+# Bandtabelle der Firmware (Menu.cpp: bands[]), kHz.
+# Achtung: Die Firmware speichert Bandgrenzen in modusspezifischen Einheiten
+# (FM: 10-kHz-Schritte, AM/SSB: kHz, siehe Utils.cpp freqFromHz/freqToHz).
+# Hier sind alle Grenzen einheitlich in kHz umgerechnet.
 # Name, Modus, min (kHz), max (kHz)
 BANDS = [
-    ("VHF", "FM", 6400, 10800),
+    ("VHF", "FM", 64000, 108000),
     ("ALL", "AM", 150, 30000),
     ("11M", "AM", 25600, 26100),
     ("13M", "AM", 21500, 21900),
