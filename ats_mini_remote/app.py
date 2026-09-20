@@ -43,12 +43,13 @@ def _interp_rssi(freqs: list[int], measured: dict[int, int],
 class _SweepPlot:
     """Geometrie des Spektrum-Canvas: Frequenz/RSSI in Pixel umrechnen."""
 
-    def __init__(self, canvas, freq_range, pad_l, pad_b, pad_t, rssi_max):
+    def __init__(self, canvas, freq_range, pad_l, pad_r, pad_b, pad_t,
+                 rssi_max):
         cw = max(canvas.winfo_width(), 100)
         ch = max(int(canvas.cget("height")), 100)
         self.pad_l = pad_l
         self.pad_t = pad_t
-        self.plot_w = max(cw - pad_l - 2, 10)
+        self.plot_w = max(cw - pad_l - pad_r, 10)
         self.plot_h = max(ch - pad_b - pad_t - 2, 10)
         self.base_y = pad_t + self.plot_h
         lo, hi = freq_range
@@ -591,9 +592,10 @@ class RemoteApp:
 
     _SWEEP_AXIS_MIN = 60       # dBuV: kleineres Achsenmaximum nie sinnvoll
     _sweep_axis_max = 60       # aktuell gezeichnetes Achsenmaximum
-    _SWEEP_PAD_L = 36         # Platz fuer die dBuV-Achse links
+    _SWEEP_PAD_L = 28         # Platz fuer die dBuV-Achse links (schmal)
+    _SWEEP_PAD_R = 34         # Platz rechts: letzte Frequenz wird nicht abgeschnitten
     _SWEEP_PAD_B = 16         # Platz fuer die Frequenzachse unten
-    _SWEEP_PAD_T = 4
+    _SWEEP_PAD_T = 14         # Platz oben: Einheit und oberster Tick am Rand
     _SWEEP_TICK_FONT = ("", 7)
 
     def _sweep_scale_max(self) -> int:
@@ -608,8 +610,9 @@ class RemoteApp:
     def _sweep_plot(self) -> _SweepPlot:
         """Aktuelles Layout des Spektrum-Canvas als _SweepPlot."""
         return _SweepPlot(self.sweep_canvas, self._sweep_freq_range,
-                          self._SWEEP_PAD_L, self._SWEEP_PAD_B,
-                          self._SWEEP_PAD_T, self._sweep_axis_max)
+                          self._SWEEP_PAD_L, self._SWEEP_PAD_R,
+                          self._SWEEP_PAD_B, self._SWEEP_PAD_T,
+                          self._sweep_axis_max)
 
     def _sweep_draw_frame(self, plot: _SweepPlot):
         """Achsen und Beschriftung zeichnen (einmalig pro Sweep/Redraw)."""
@@ -626,9 +629,10 @@ class RemoteApp:
             canvas.create_line(pad_l - 3, y, pad_l, y, fill="#888")
             canvas.create_text(pad_l - 5, y, text=str(rssi), anchor="e",
                                font=self._SWEEP_TICK_FONT, fill="#ccc")
+        # Einheit der dBuV-Achse oben links, sichtbar im Canvas
         canvas.create_line(pad_l, pad_t, pad_l, base_y, fill="#888")
-        canvas.create_text(pad_l - 5, pad_t - 2, text="dBµV",
-                           anchor="se", font=self._SWEEP_TICK_FONT, fill="#ccc")
+        canvas.create_text(pad_l - 5, pad_t, text="dBµV",
+                           anchor="sw", font=self._SWEEP_TICK_FONT, fill="#ccc")
 
         # Frequenzachse unten: 5 Ticks, Einheit nach Spanne (MHz/kHz)
         span = plot.span
@@ -768,7 +772,7 @@ class RemoteApp:
         canvas = self.sweep_canvas
         cw = max(canvas.winfo_width(), 100)
         pad_l = self._SWEEP_PAD_L
-        plot_w = max(cw - pad_l - 2, 10)
+        plot_w = max(cw - pad_l - self._SWEEP_PAD_R, 10)
         hz = lo + (event.x - pad_l) / plot_w * span
         hz = int(round((hz // 1000) * 1000))
         status = self._last_status

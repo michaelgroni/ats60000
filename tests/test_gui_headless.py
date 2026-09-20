@@ -415,6 +415,30 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertEqual(len(pale), 1)
         self.assertEqual(len(main), 1)
 
+    def test_axis_unit_is_visible(self):
+        app = self._make_app()
+        app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_freq_range = (3_500_000, 3_700_000)
+        app._pending_status = self._status(3_600)
+        app._poll_main_thread()
+        # Einheit "dBµV" liegt vollständig im Canvas (nicht abgeschnitten)
+        unit = [t for t in app.sweep_canvas.texts
+                if t[1].get("text") == "dBµV"]
+        self.assertEqual(len(unit), 1)
+        y = unit[0][0][1]
+        self.assertGreaterEqual(y, 0)
+        self.assertLess(y, 140)
+        # oberster RSSI-Tick hat Abstand zum oberen Rand
+        ticks = [t for t in app.sweep_canvas.texts
+                 if t[1].get("text") == "60"]
+        self.assertGreaterEqual(ticks[0][0][1], 0)
+        # letzter Frequenz-Tick hat rechts Platz: rechte Kante + Textbreite
+        # bleibt unter der Canvas-Breite (pad_r reserviert)
+        last_x = max(t[0][0] for t in app.sweep_canvas.texts
+                     if t[1].get("text") not in ("dBµV",))
+        self.assertLessEqual(last_x, 300 - 10)
+
     def test_resize_redraws_spectrum(self):
         app = self._make_app()
         app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
