@@ -26,6 +26,10 @@ class RemoteApp:
         self._screenshot: protocol.Screenshot | None = None
         self._volume_target = 0
         self._row_value_vars: dict[str, tk.StringVar] = {}
+        self._sweep_active = False
+        self._sweep_freqs: list[int] = []
+        self._sweep_index = 0
+        self._sweep_restore_freq: int | None = None
 
         self._build_ui()
         root.after(200, self._poll_main_thread)
@@ -144,6 +148,30 @@ class RemoteApp:
         self.memory_tree.grid(row=1, column=0, columnspan=5, sticky="we", padx=4, pady=4)
         mem.columnconfigure(0, weight=1)
 
+        # Bandpegel (Sweep)
+        sweep = ttk.LabelFrame(outer, text="Bandpegel")
+        sweep.pack(fill=tk.X, **pad)
+        self.sweep_points_var = tk.StringVar(value="60")
+        ttk.Label(sweep, text="Messpunkte:").grid(row=0, column=0, padx=4, pady=2)
+        ttk.Spinbox(sweep, from_=10, to=200, increment=10,
+                    textvariable=self.sweep_points_var, width=6).grid(row=0, column=1)
+        self.sweep_start_button = ttk.Button(sweep, text="Sweep starten",
+                                             command=self.sweep_start)
+        self.sweep_start_button.grid(row=0, column=2, padx=6)
+        self.sweep_stop_button = ttk.Button(sweep, text="Abbrechen",
+                                            command=self.sweep_stop, state=tk.DISABLED)
+        self.sweep_stop_button.grid(row=0, column=3, padx=4)
+        self.sweep_progress_var = tk.StringVar(value="")
+        ttk.Label(sweep, textvariable=self.sweep_progress_var).grid(
+            row=0, column=4, padx=8)
+        self.sweep_canvas = tk.Canvas(sweep, height=120, bg="#000",
+                                      highlightthickness=0)
+        self.sweep_canvas.grid(row=1, column=0, columnspan=5, sticky="we",
+                               padx=4, pady=(0, 4))
+        self.sweep_canvas.bind("<Button-1>", self._sweep_click)
+        self._sweep_data: list[tuple[int, int]] | None = None
+        self._sweep_freq_range: tuple[int, int] | None = None
+
         # Screenshot
         shot = ttk.LabelFrame(outer, text="Display")
         shot.pack(fill=tk.X, **pad)
@@ -214,6 +242,138 @@ class RemoteApp:
             self.send(protocol.format_frequency_command(target, ssb))
         except ValueError:
             self.log("Frequenz außerhalb des Bands – Schritt ignoriert")
+
+    # -------------------------------------------------- Bandpegel (Sweep)
+
+    def sweep_start(self):
+        if not self.client.is_connected():
+            self.log("Nicht verbunden – Sweep nicht möglich")
+            return
+        status = self._last_status
+        if status is None:
+            self.log("Kein Status – Sweep nicht möglich")
+            return
+        rng = protocol.band_range(status.band, status.mode)
+        if rng is None:
+            self.log(f"Band '{status.band}' unbekannt – Sweep nicht möglich")
+            return
+        try:
+            points = int(self.sweep_points_var.get())
+        except ValueError:
+            points = 60
+        points = max(10, min(200, points))
+
+        lo_khz, hi_khz = rng
+        ssb = status.mode in ("LSB", "USB")
+        step_khz = (hi_khz - lo_khz) / (points - 1)
+        self._sweep_freqs = [int(round(lo_khz * 1000 + i * step_khz * 1000))
+                             for i in range(points)]
+        self._sweep_index = 0
+        self._sweep_data = []
+        self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
+        self._sweep_restore_freq = status.display_frequency_hz()
+        self._sweep_active = True
+        self.sweep_start_button.config(state=tk.DISABLED)
+        self.sweep_stop_button.config(state=tk.NORMAL)
+        self.log(f"Sweep über {status.band}: {lo_khz}–{hi_khz} kHz, "
+                 f"{points} Punkte")
+        self._sweep_next()
+
+    def sweep_stop(self):
+        if not self._sweep_active:
+            return
+        self._sweep_active = False
+        self._sweep_finish("Abgebrochen")
+
+    def _sweep_next(self):
+        if not self._sweep_active:
+            return
+        if self._sweep_index >= len(self._sweep_freqs):
+            self._sweep_finish("Fertig")
+            return
+        hz = self._sweep_freqs[self._sweep_index]
+        status = self._last_status
+        ssb = status.mode in ("LSB", "USB") if status else False
+        try:
+            self.send(protocol.format_frequency_command(hz, ssb))
+        except ValueError:
+            # Frequenz außerhalb des Bands (Rundung) → Punkt überspringen
+            self._sweep_index += 1
+            self.root.after(30, self._sweep_next)
+
+    def _sweep_on_status(self, status: protocol.ReceiverStatus):
+        """Wird aus on_status gerufen: misst den Punkt, fährt fort."""
+        if not self._sweep_active:
+            return
+        expected_hz = self._sweep_freqs[self._sweep_index] if \
+            self._sweep_index < len(self._sweep_freqs) else None
+        actual_hz = status.display_frequency_hz()
+        # Status bestätigt die Ziel Frequenz erst, wenn sie übernommen wurde
+        if expected_hz is None or abs(actual_hz - expected_hz) > 1000:
+            return
+        self._sweep_data.append((expected_hz, status.rssi))
+        self._sweep_index += 1
+        done = self._sweep_index
+        total = len(self._sweep_freqs)
+        self.sweep_progress_var.set(f"{done}/{total}")
+        self._sweep_draw()
+        if done >= total:
+            self._sweep_finish("Fertig")
+        else:
+            # Kein additional Delay: der nächste F-Befehl geht sofort raus,
+            # der 500-ms-Monitor-Teakt liefert die zugehörige Messung.
+            self._sweep_next()
+
+    def _sweep_finish(self, message: str):
+        self._sweep_active = False
+        self.sweep_start_button.config(state=tk.NORMAL)
+        self.sweep_stop_button.config(state=tk.DISABLED)
+        self.sweep_progress_var.set(message)
+        restore = self._sweep_restore_freq
+        if restore is not None:
+            status = self._last_status
+            ssb = status.mode in ("LSB", "USB") if status else False
+            try:
+                self.send(protocol.format_frequency_command(restore, ssb))
+            except ValueError:
+                pass
+        self.log(f"Sweep {message}: {len(self._sweep_data or [])} Punkte")
+
+    def _sweep_draw(self):
+        data = self._sweep_data
+        if not data:
+            return
+        canvas = self.sweep_canvas
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 100)
+        height = 120
+        lo, hi = self._sweep_freq_range
+        span = max(hi - lo, 1)
+        rssi_max = 127
+        for hz, rssi in data:
+            x = (hz - lo) / span * width
+            y = height - 4 - (rssi / rssi_max) * (height - 8)
+            canvas.create_rectangle(x - 1, y, x + 1, height - 4,
+                                   fill="#0f0", outline="")
+
+    def _sweep_click(self, event):
+        """Klick im Diagramm: zur angeklickten Frequenz tunen."""
+        data = self._sweep_data
+        if not data or self._sweep_freq_range is None:
+            return
+        lo, hi = self._sweep_freq_range
+        span = max(hi - lo, 1)
+        canvas = self.sweep_canvas
+        width = max(canvas.winfo_width(), 100)
+        hz = lo + event.x / width * span
+        hz = int(round((hz // 1000) * 1000))
+        status = self._last_status
+        ssb = status.mode in ("LSB", "USB") if status else False
+        try:
+            self.send(protocol.format_frequency_command(hz, ssb))
+            self.log(f"Abgestimmt auf {hz / 1000:.1f} kHz")
+        except ValueError:
+            self.log("Frequenz außerhalb des Bands")
 
     def _set_row_values(self, status: protocol.ReceiverStatus):
         """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
@@ -347,6 +507,8 @@ class RemoteApp:
 
     def on_status(self, status: protocol.ReceiverStatus):
         self._pending_status = status
+        if self._sweep_active:
+            self.root.after(0, lambda: self._sweep_on_status(status))
 
     def on_memory(self, mem: tuple[int, str, int, str]):
         self._pending_memory.append(mem)

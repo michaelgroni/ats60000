@@ -123,6 +123,52 @@ def parse_memory_line(line: str) -> tuple[int, str, int, str] | None:
     return slot, fields[1], freq, fields[3]
 
 
+# Bandtabelle der Firmware (Menu.cpp: bands[]), kHz
+# Name, Modus, min (kHz), max (kHz)
+BANDS = [
+    ("VHF", "FM", 6400, 10800),
+    ("ALL", "AM", 150, 30000),
+    ("11M", "AM", 25600, 26100),
+    ("13M", "AM", 21500, 21900),
+    ("15M", "AM", 18900, 19100),
+    ("16M", "AM", 17400, 18100),
+    ("19M", "AM", 15100, 15900),
+    ("22M", "AM", 13500, 13900),
+    ("25M", "AM", 11000, 13000),
+    ("31M", "AM", 9000, 11000),
+    ("41M", "AM", 7000, 9000),
+    ("49M", "AM", 5000, 7000),
+    ("60M", "AM", 4000, 5100),
+    ("75M", "AM", 3500, 4000),
+    ("90M", "AM", 3000, 3500),
+    ("MW3", "AM", 1700, 3500),
+    ("MW2", "AM", 495, 1701),
+    ("MW1", "AM", 150, 1800),
+    ("160M", "LSB", 1800, 2000),
+    ("80M", "LSB", 3500, 4000),
+    ("40M", "LSB", 7000, 7300),
+    ("30M", "LSB", 10000, 10200),
+    ("20M", "USB", 14000, 14400),
+    ("17M", "USB", 18000, 18200),
+    ("15M", "USB", 21000, 21500),
+    ("12M", "USB", 24800, 25000),
+    ("10M", "USB", 28000, 29700),
+    ("CB", "AM", 25000, 28000),
+]
+
+
+def band_range(band_name: str, mode: str) -> tuple[int, int] | None:
+    """Liefert (min_kHz, max_kHz) für ein Band, oder None wenn unbekannt."""
+    for name, _mode, lo, hi in BANDS:
+        if name.upper() == band_name.upper() and _mode == mode.upper():
+            return (lo, hi)
+    # Fallback: Bandname passt, Modus weicht ab (z. B. nach Moduswechsel)
+    for name, _mode, lo, hi in BANDS:
+        if name.upper() == band_name.upper():
+            return (lo, hi)
+    return None
+
+
 def s_meter(rssi: int, fm: bool) -> str:
     """S-Wert nach Kurzwellen-Praxis aus der RSSI-Angabe (dBµV).
 

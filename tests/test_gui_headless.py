@@ -75,6 +75,7 @@ def make_tkinter_mock():
     mod.IntVar = tk_var
     mod.Text = FakeWidget
     mod.END = "end"
+    mod.Canvas = FakeWidget
     mod.NORMAL = "normal"
     mod.DISABLED = "disabled"
     mod.PhotoImage = lambda **kw: None
