@@ -33,7 +33,7 @@ class RemoteApp:
         self._sweep_timeout_id: str | None = None
 
         self._build_ui()
-        root.after(200, self._poll_main_thread)
+        root.after(50, self._poll_main_thread)
 
     # ----------------------------------------------------------- Oberfläche
 
@@ -676,7 +676,7 @@ class RemoteApp:
             self._screenshot = shot
             self._show_screenshot(shot)
 
-        self.root.after(100, self._poll_main_thread)
+        self.root.after(50, self._poll_main_thread)
 
     def _show_screenshot(self, shot: protocol.Screenshot):
         ppm = shot.to_ppm()
