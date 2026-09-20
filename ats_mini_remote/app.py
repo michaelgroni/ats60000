@@ -25,7 +25,6 @@ class RemoteApp:
         self._pending_memory: list[tuple[int, str, int, str]] = []
         self._screenshot: protocol.Screenshot | None = None
         self._volume_target = 0
-        self._volume_job = None
 
         self._build_ui()
         root.after(200, self._poll_main_thread)
@@ -111,9 +110,12 @@ class RemoteApp:
                        command=lambda c=up: self.send(c)).grid(row=row, column=2, sticky="w")
 
         self.volume_var = tk.IntVar(value=0)
-        volume_scale = ttk.Scale(ctrl, from_=63, to=0, variable=self.volume_var,
-                                 command=self.on_volume_changed)
-        volume_scale.grid(row=7, column=1, columnspan=3, sticky="we", padx=4, pady=2)
+        self._volume_dragging = False
+        self.volume_scale = ttk.Scale(ctrl, from_=0, to=63, variable=self.volume_var,
+                                       command=self.on_volume_changed)
+        self.volume_scale.grid(row=7, column=1, columnspan=3, sticky="we", padx=4, pady=2)
+        self.volume_scale.bind("<ButtonPress-1>", lambda _e: self._volume_drag(True))
+        self.volume_scale.bind("<ButtonRelease-1>", lambda _e: self._volume_drag(False))
         ttk.Label(ctrl, text="Lautstärke").grid(row=7, column=0, sticky="w", padx=4)
 
         # Speicher
@@ -227,24 +229,25 @@ class RemoteApp:
             hz = (hz // 1000) * 1000
         self.send(protocol.format_frequency_command(hz, ssb))
 
+    def _volume_drag(self, active: bool):
+        self._volume_dragging = active
+        if not active:
+            # Beim Loslassen einmalig gegen den letzten bekannten Radio-Wert
+            self._send_volume()
+
     def on_volume_changed(self, value: str):
-        # Nur den Zielpunkt merken; gesendet wird verzögert in _send_volume,
-        # damit schnelles Ziehen des Reglers keine Befehlsflut auslöst.
+        # Ziel nur merken; gesendet wird beim Loslassen des Reglers als
+        # ein einziger Burst. Während des Ziehens wird nichts gesendet,
+        # und Statusupdates überschreiben den Regler nicht.
         self._volume_target = int(float(value))
-        if self._volume_job is None:
-            self._volume_job = self.root.after(150, self._send_volume)
 
     def _send_volume(self):
-        self._volume_job = None
         if not self.client.is_connected():
             return
         target = self._volume_target
-        current = self._current_volume
-        if target == current:
-            return
-        command = protocol.CMD_VOLUME_UP if target > current else protocol.CMD_VOLUME_DOWN
-        for _ in range(abs(target - current)):
-            self.send(command)
+        burst = protocol.volume_burst(self._current_volume, target)
+        if burst:
+            self.send(burst)
 
     def show_memories(self):
         self._pending_memory = []
@@ -360,6 +363,9 @@ class RemoteApp:
             self._last_status = status
             self._current_mode = status.mode
             self._current_volume = status.volume
+            # Regler nur aktualisieren, wenn der Nutzer ihn nicht gerade zieht
+            if not self._volume_dragging:
+                self.volume_var.set(status.volume)
             hz = status.display_frequency_hz()
             if status.mode.upper() == "FM":
                 self.freq_var.set(f"{hz / 1e6:.2f} MHz")

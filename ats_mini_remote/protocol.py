@@ -197,6 +197,19 @@ CMD_SHOW_MEMORIES = b"$"
 CMD_SCREENSHOT = b"C"
 
 
+def volume_burst(current: int, target: int) -> bytes:
+    """Befehlsfolge, um von 'current' auf 'target' zu kommen (ein Burst).
+
+    Die Firmware kennt nur V/v (Lautstärke ±1). Die Differenz wird als
+    ein einziger zusammenhängender Bytestrom übergeben, damit das Radio
+    sie als zusammengehörige Folge verarbeitet.
+    """
+    if target == current:
+        return b""
+    command = CMD_VOLUME_UP if target > current else CMD_VOLUME_DOWN
+    return command * abs(target - current)
+
+
 class Screenshot:
     """Decodiertes Display-Abbild des Empfängers (RGB, zeilenweise oben nach unten)."""
 
