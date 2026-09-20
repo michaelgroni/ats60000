@@ -134,6 +134,9 @@ class FakePhotoImage:
     def put(self, data, to=None):
         self.puts.append((data, to))
 
+    def blank(self):
+        pass
+
 
 class FakeCanvas:
     """Zeichenoperationen mitzaehlen statt darstellen."""
@@ -441,6 +444,19 @@ class SpectrumMarkerTest(unittest.TestCase):
         last_x = max(t[0][0] for t in app.sweep_canvas.texts
                      if t[1].get("text") not in ("dBµV",))
         self.assertLessEqual(last_x, 300 - 10)
+
+    def test_incremental_draw_without_photo_falls_back(self):
+        app = self._make_app()
+        # Crash-Pfad aus dem Feldreport: PhotoImage war nie angelegt,
+        # der inkrementelle Draw rief .put auf None
+        app._sweep_freqs = [3_500_000, 3_600_000]
+        app._sweep_data = [(3_500_000, 30)]
+        app._sweep_active = True
+        app._sweep_photo = None
+        app._sweep_draw_incr(3_600_000)
+        # Fallback: komplette Zeichnung hat das Bild erzeugt
+        self.assertIsNotNone(app._sweep_photo)
+        self.assertGreater(len(app.sweep_canvas.images), 0)
 
     def test_spectrum_fill_is_antialiased(self):
         from ats_mini_remote.app import _raster_spectrum

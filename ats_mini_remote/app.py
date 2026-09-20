@@ -471,6 +471,14 @@ class RemoteApp:
         # inkrementell hinzugefuegt (kein Vollredraw pro Punkt)
         self._sweep_axis_max = self._SWEEP_AXIS_MIN
         self.sweep_canvas.delete("all")
+        # leeres Messbild anlegen: der inkrementelle Draw schreibt die
+        # Spalten per PhotoImage.put hinein
+        canvas = self.sweep_canvas
+        cw = max(canvas.winfo_width(), 100)
+        ch = max(int(canvas.cget("height")), 100)
+        self._sweep_photo = tk.PhotoImage(width=cw, height=ch)
+        self._sweep_photo.put("{black}", to=(0, 0, cw, ch))
+        canvas.create_image(0, 0, image=self._sweep_photo, anchor="nw")
         plot = self._sweep_plot()
         self._sweep_draw_frame(plot)
         self._sweep_draw_marker(plot)
@@ -831,6 +839,11 @@ class RemoteApp:
         if self._sweep_freq_range is None or not self._sweep_freqs:
             return
         if self._sweep_scale_max() != self._sweep_axis_max:
+            self._sweep_draw()
+            return
+        if self._sweep_photo is None:
+            # kein Bild angelegt (z. B. Sweep-Start noch nicht fertig):
+            # einmal komplett zeichnen, das Bild wird dabei erzeugt
             self._sweep_draw()
             return
         freqs = self._sweep_freqs
