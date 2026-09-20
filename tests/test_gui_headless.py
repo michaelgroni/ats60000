@@ -415,6 +415,25 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertEqual(len(pale), 1)
         self.assertEqual(len(main), 1)
 
+    def test_resize_redraws_spectrum(self):
+        app = self._make_app()
+        app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_freq_range = (3_500_000, 4_000_000)
+        canvas = app.sweep_canvas
+        # Resize: breiteres Canvas -> kompletter Redraw mit neuer Geometrie
+        canvas.width = 600
+        app._sweep_on_resize(None)
+        self.assertEqual(canvas.deleted, 1)
+        fills = [p for p in canvas.polygons
+                 if p[1].get("fill") == "#0f0"]
+        self.assertGreaterEqual(len(fills), 1)
+        # ohne Daten wird beim Resize nicht gezeichnet
+        canvas.deleted = 0
+        app._sweep_data = None
+        app._sweep_on_resize(None)
+        self.assertEqual(canvas.deleted, 0)
+
     def test_no_draw_without_spectrum_data(self):
         app = self._make_app()
         app._sweep_data = None

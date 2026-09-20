@@ -234,7 +234,11 @@ class RemoteApp:
                                       highlightthickness=0)
         self.sweep_canvas.grid(row=1, column=0, columnspan=5, sticky="we",
                                padx=4, pady=(0, 4))
+        # Spalte 0 nimmt die ganze zusaetzliche Breite auf: das Spektrum
+        # fuellt das Fenster abzueglich Rand und waechst mit dem Fenster
+        sweep.columnconfigure(0, weight=1)
         self.sweep_canvas.bind("<Button-1>", self._sweep_click)
+        self.sweep_canvas.bind("<Configure>", self._sweep_on_resize)
         self._sweep_data: list[tuple[int, int]] | None = None
         self._sweep_freq_range: tuple[int, int] | None = None
 
@@ -747,6 +751,12 @@ class RemoteApp:
             self._sweep_fill(plot, hz_p, peak_p, hz, peak,
                              color=self._SWEEP_PEAK_FILL)
             self._sweep_fill(plot, hz_p, measured[hz_p], hz, rssi)
+
+    def _sweep_on_resize(self, event):
+        """Bei Groessenaenderung neu zeichnen: das Spektrum passt sich
+        der neuen Canvas-Breite an (Achsen, Flaechen, Marke)."""
+        if self._sweep_data:
+            self._sweep_draw()
 
     def _sweep_click(self, event):
         """Klick im Diagramm: zur angeklickten Frequenz tunen."""
