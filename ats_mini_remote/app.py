@@ -96,9 +96,9 @@ class RemoteApp:
 
         rows = [
             ("Frequenz", None, None),
+            ("Schrittweite", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
             ("Band", protocol.CMD_BAND_UP, protocol.CMD_BAND_DOWN),
             ("Modus", protocol.CMD_MODE_UP, protocol.CMD_MODE_DOWN),
-            ("Schrittweite", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
             ("Bandbreite", protocol.CMD_BANDWIDTH_UP, protocol.CMD_BANDWIDTH_DOWN),
             ("AGC/Attn", protocol.CMD_AGC_UP, protocol.CMD_AGC_DOWN),
         ]
@@ -109,14 +109,14 @@ class RemoteApp:
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
                 up_cmd = (lambda c=up: lambda: self.send(c))()
-            ttk.Button(ctrl, text="▼", width=3,
+            ttk.Button(ctrl, text="◀", width=3,
                        command=down_cmd).grid(row=row, column=0, sticky="w", padx=4, pady=2)
             value_var = tk.StringVar(value="–")
             self._row_value_vars[label] = value_var
             ttk.Label(ctrl, text=label, width=12).grid(row=row, column=1, sticky="w", padx=4)
             ttk.Label(ctrl, textvariable=value_var, width=12,
                       font=("", 9, "bold")).grid(row=row, column=2, sticky="w", padx=8)
-            ttk.Button(ctrl, text="▲", width=3,
+            ttk.Button(ctrl, text="▶", width=3,
                        command=up_cmd).grid(row=row, column=3, sticky="w")
 
         # Speicher
@@ -212,7 +212,7 @@ class RemoteApp:
             self.log("Frequenz außerhalb des Bands – Schritt ignoriert")
 
     def _set_row_values(self, status: protocol.ReceiverStatus):
-        """Wertanzeige zwischen den ▼/▲-Buttons aktualisieren."""
+        """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
         vars_ = self._row_value_vars
         if "Frequenz" in vars_:
             hz = status.display_frequency_hz()
