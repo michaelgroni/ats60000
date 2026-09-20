@@ -102,6 +102,11 @@ ats_mini_remote/
 tests/                 # Unit- und Integrationstests
 ```
 
+## Lizenz
+
+[MIT](LICENSE) – Verwendung, Änderung und Weitergabe sind frei,
+solange der Copyright-Hinweis erhalten bleibt.
+
 ## Hinweise
 
 * Die TCP-Steuerung ist unverschlüsselt und ohne Anmeldung – wie in der
