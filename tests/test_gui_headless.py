@@ -132,6 +132,7 @@ class FakeCanvas:
         self.lines = []
         self.rectangles = []
         self.polygons = []
+        self.ovals = []
         self.texts = []
         self.deleted = 0
         self.width = 300
@@ -151,6 +152,9 @@ class FakeCanvas:
 
     def create_polygon(self, *a, **kw):
         self.polygons.append((a, kw))
+
+    def create_oval(self, *a, **kw):
+        self.ovals.append((a, kw))
 
     def create_line(self, *a, **kw):
         self.lines.append((a, kw))
@@ -318,25 +322,42 @@ class SpectrumMarkerTest(unittest.TestCase):
         last_tick_x = max(t[0][0] for t in freq_ticks)
         self.assertGreater(unit[0][0], last_tick_x)
 
-    def test_smeter_draws_bar_and_value(self):
+    def test_smeter_draws_needle_and_scale(self):
+        import math
         from ats_mini_remote import protocol
         app = self._make_app()
         app._last_status = protocol.ReceiverStatus(
             frequency=3_600, mode="AM", band="80M",
             rssi=64, snr=30)
-        # Signalstärke: Balken proportional zu 64/127
+        # Zeigerinstrument: weisser Zeiger, Drehpunkt als Oval, Skalen-Ticks
         app._smeter_redraw()
-        rects = [r for r in app.smeter_canvas.rectangles
-                 if r[1].get("fill") == "#0f0"]
-        self.assertEqual(len(rects), 1)
-        self.assertEqual(rects[0][1].get("fill"), "#0f0")
-        texts = [t[1].get("text") for t in app.smeter_canvas.texts]
+        canvas = app.smeter_canvas
+        needles = [ln for ln in canvas.lines if ln[1].get("fill") == "#fff"]
+        self.assertEqual(len(needles), 1)   # genau ein Zeiger
+        self.assertEqual(len(canvas.ovals), 1)   # Drehpunkt
+        texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("64 dBµV", texts)
-        # S-Wert-Metrik: Skala S1..S9, Text ist der S-Wert
+        # Skala: RSSI-Ticks 20..120 vorhanden
+        for tick in ("20", "60", "120"):
+            self.assertIn(tick, texts)
+        # Zeigerwinkel: 64/127 der Halbkreisspanne, von links ueber oben
+        cx, cy = app._SMETER_PIVOT
+        (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
+        angle = math.degrees(math.atan2(cy - y2, x2 - cx))
+        expected = 180 - (64 / 127) * 180
+        self.assertAlmostEqual(angle, expected, delta=2)
+
+    def test_smeter_needle_follows_metric(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M",
+            rssi=64, snr=30)
+        # S-Wert-Metrik: Skala S1..S9, Anzeige S9+20
         app.smeter_metric_var.value = "S-Wert"
         app._smeter_redraw()
         texts = [t[1].get("text") for t in app.smeter_canvas.texts]
-        self.assertIn("S9+20", texts)   # 64 dBuV HF -> S9+20
+        self.assertIn("S9+20", texts)
         self.assertIn("S9", texts)      # Tick-Label
         # SNR-Metrik: Ticks 0/15/30/45/60, Text in dB
         app.smeter_metric_var.value = "SNR"
@@ -344,25 +365,6 @@ class SpectrumMarkerTest(unittest.TestCase):
         texts = [t[1].get("text") for t in app.smeter_canvas.texts]
         self.assertIn("30 dB", texts)
         self.assertIn("45", texts)
-
-    def test_smeter_bar_scales_with_metric(self):
-        from ats_mini_remote import protocol
-        app = self._make_app()
-        app._last_status = protocol.ReceiverStatus(
-            frequency=3_600, mode="AM", band="80M",
-            rssi=64, snr=30)
-        app._smeter_redraw()
-        bar_rssi = [r for r in app.smeter_canvas.rectangles
-                    if r[1].get("fill") == "#0f0"][0][0]
-        app.smeter_metric_var.value = "SNR"
-        app._smeter_redraw()
-        bar_snr = [r for r in app.smeter_canvas.rectangles
-                   if r[1].get("fill") == "#0f0"][0][0]
-        # RSSI 64/127 ≈ 0.504 vs SNR 30/60 = 0.5: SNR-Balken minimal kuerzer
-        self.assertAlmostEqual(bar_rssi[2] - bar_rssi[0],
-                               (64 / 127) * (260 - 34 - 44), delta=1)
-        self.assertAlmostEqual(bar_snr[2] - bar_snr[0],
-                               (30 / 60) * (260 - 34 - 44), delta=1)
 
     def test_click_snaps_to_step(self):
         from ats_mini_remote import protocol
