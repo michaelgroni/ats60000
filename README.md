@@ -34,17 +34,37 @@ python3 -m ats_mini_remote
 Dann Host (`atsmini.local` oder IP) und Port 60000 eintragen und auf
 **Verbinden** klicken. Beim Verbinden wird der Statusmonitor automatisch
 aktiviert; Frequenz, Band, Modus, Signalstärke, SNR und Batteriespannung
-aktualisieren sich danach halbsekündlich.
+aktualisieren sich laufend (etwa alle 50 ms).
+
+Zahlen mit Nachkommastellen (Frequenz, Spannung, Achsenbeschriftung) folgen
+dem Dezimaltrenner des Betriebssystem-Locales (also Komma im deutschen
+System); die Frequenzeingabe akzeptiert Punkt und Komma.
 
 ### Bedienung
 
-* **Frequenz**: Direkteingabe (z. B. `107.9` MHz oder `107900000` Hz) oder
-  Schrittweise mit `▼`/`▲` (entspricht dem Drehencoder)
-* **Band / Modus / Schrittweite / Bandbreite / AGC**: Hoch-/runter-Schalten
-* **Lautstärke**: Schieberegler (0–63)
+* **Frequenz**: Direkteingabe (z. B. `107.9` MHz) oder schrittweise mit
+  `◀`/`▶`. Jede eingestellte Frequenz ist ein Vielfaches der aktuellen
+  Schrittweite – auch nach Klick ins Spektrum.
+* **Schrittweite / Lautstärke / Band / Modus / Bandbreite / AGC/Attn**:
+  je eine Zeile mit `◀`/`▶`-Buttons, der aktuelle Wert steht dazwischen.
+  Die Lautstärke (0–63) wird als Schieberegler erst beim Loslassen
+  gesendet – Ziehen am Regler erzeugt keinen Befehlsburst.
+* **S-Meter**: Analoge Zeigerinstrument-Anzeige rechts der Steuerleiste,
+  umschaltbar per Radiobutton zwischen Signalstärke (dBµV), S-Wert
+  (S1 … S9 mit Bereich +10 … +60 dB darüber) und SNR (dB). Der obere
+  Skalenbereich ist rot markiert; die Wertziffer färbt sich dort rot.
+* **Spektrum**: Manueller Band-Sweep auf Knopfdruck. Die Zahl der
+  Messpunkte wird abhängig von der Bandbreite des eingestellten Bands
+  empfohlen (z. B. mehr Punkte im VHF-Band), lässt sich aber frei
+  einstellen. Das Programm wählt passend dazu die feinmögliche
+  Schrittweite und eine Bandbreite nach Punktabstand, vermisst das Band
+  und interpoliert die Fläche lückenlos (grün). Zurückschauen in der
+  Zeit: ein blasseres Polygon zeigt den Verlauf aus vorherigem Wert und
+  gleitendem Mittelwert (Peak-Hold je Frequenz). Ein Klick ins Spektrum
+  stimmt die Frequenz an dieser Stelle an (auf dem Schrittweiten-Raster).
 * **Speicherplätze**: Anzeigen (`$`), aktuellen Sender in einen Slot
-  schreiben (`#`), Slot löschen (Frequenz 0). Das Aufrufen eines Slots erfolgt
-  am Radio selbst – dafür gibt es im Protokoll keinen Befehl.
+  schreiben (`#`), Slot löschen (Frequenz 0). Das Aufrufen eines Slots
+  erfolgt am Radio selbst – dafür gibt es im Protokoll keinen Befehl.
 * **Screenshot**: Fängt das Radio-Display ab (BMP) und zeigt es an;
   speicherbar als Datei.
 * **Log**: Rohdaten der Verbindung im unteren Bereich.
@@ -74,10 +94,11 @@ python3 -m unittest discover -s tests -v
 ats_mini_remote/
 ├── __init__.py
 ├── __main__.py        # Einstieg: python3 -m ats_mini_remote
-├── app.py             # Tkinter-Oberfläche
-├── client.py          # TCP-Client mit Lese-Thread
+├── app.py             # Tkinter-Oberfläche, Spektrum, S-Meter
+├── client.py          # TCP-Client mit Lese-Thread und Send-Guard
 ├── mock_receiver.py   # Nachbau des Radio-Fernsteuerprotokolls (Demo/Test)
-└── protocol.py        # Ad-hoc-Protokoll: Befehle, Status, Screenshot-Decode
+└── protocol.py        # Ad-hoc-Protokoll: Befehle, Status, Sweep-Planung,
+                      # S-Wert-Tabelle, Locale-Zahlenformate
 tests/                 # Unit- und Integrationstests
 ```
 
