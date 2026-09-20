@@ -123,6 +123,23 @@ def parse_memory_line(line: str) -> tuple[int, str, int, str] | None:
     return slot, fields[1], freq, fields[3]
 
 
+def step_size_hz(status: "ReceiverStatus") -> int:
+    """Wandelt das Schrittweiten-Feld des Monitor-Status in Hz um.
+
+    FM/AM-Schritte sind wie '10k', '100k' oder '1M' formatiert,
+    SSB-Schritte sind reine Zahlen in Hz ('25', '100').
+    """
+    text = status.step.lower()
+    if text.endswith("k"):
+        return int(float(text[:-1]) * 1000)
+    if text.endswith("m"):
+        return int(float(text[:-1]) * 1_000_000)
+    try:
+        return int(text)
+    except ValueError:
+        return 1000
+
+
 def format_frequency_command(hz: int, ssb: bool) -> bytes:
     """Erzeugt den Frequenzbefehl 'F<hz>\r\n'.
 
@@ -149,6 +166,11 @@ def format_memory_command(slot: int, band: str, hz: int, mode: str) -> bytes:
 
 
 # Einzeltasten-Befehle (siehe docs/source/remote.md der Firmware)
+#
+# Achtung: R/r/e emulieren den Drehencoder bzw. dessen Tastendruck und
+# wirken in der Firmware je nach aktuell geöffnetem Menü auf den
+# MENÜEINTRAG (z. B. den Wi-Fi-Modus), nicht auf die Frequenz. Für
+# Fernsteuerung daher nicht verwenden.
 CMD_ENCODER_UP = b"R"
 CMD_ENCODER_DOWN = b"r"
 CMD_ENCODER_CLICK = b"e"

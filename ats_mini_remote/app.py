@@ -91,10 +91,10 @@ class RemoteApp:
         ttk.Button(ctrl, text="Setzen", command=self.set_frequency).grid(
             row=0, column=3, padx=4)
         ttk.Button(ctrl, text="▼",
-                   command=lambda: self.send(protocol.CMD_ENCODER_DOWN)).grid(
+                   command=lambda: self.tune(-1)).grid(
             row=0, column=4, padx=2)
         ttk.Button(ctrl, text="▲",
-                   command=lambda: self.send(protocol.CMD_ENCODER_UP)).grid(
+                   command=lambda: self.tune(+1)).grid(
             row=0, column=5, padx=2)
 
         for row, (label, up, down) in enumerate([
@@ -186,6 +186,27 @@ class RemoteApp:
             self.log("Nicht verbunden – Befehl ignoriert")
             return
         self.client.send(command)
+
+    def tune(self, direction: int):
+        """Frequenz um eine Schrittweite ändern — über den F-Befehl.
+
+        Kein R/r (Encoder-Emulation): In der Firmware dreht R/r je nach
+        aktuellem Bildschirm den MENÜEINTRAG (z. B. den Wi-Fi-Modus) statt
+        die Frequenz und speichert das ab. Der F-Befehl wirkt immer und
+        ausschließlich auf die Frequenz.
+        """
+        status = self._last_status
+        if status is None:
+            self.log("Kein Status – Frequenzschritt nicht möglich")
+            return
+        hz = status.display_frequency_hz()
+        step_hz = protocol.step_size_hz(status)
+        target = hz + direction * step_hz
+        ssb = status.mode in ("LSB", "USB")
+        try:
+            self.send(protocol.format_frequency_command(target, ssb))
+        except ValueError:
+            self.log("Frequenz außerhalb des Bands – Schritt ignoriert")
 
     def set_frequency(self):
         raw = self.freq_entry_var.get().strip().replace(",", ".")
