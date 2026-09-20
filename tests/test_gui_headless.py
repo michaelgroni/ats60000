@@ -291,6 +291,27 @@ class SpectrumMarkerTest(unittest.TestCase):
                   if ln[1].get("fill") == "#0a0"]
         self.assertEqual(len(curves), 0)
 
+    def test_incremental_draw_during_sweep(self):
+        app = self._make_app()
+        # 3 Punkte geplant, Reihenfolge wie beim Sweep von links nach rechts
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_data = []
+        app._sweep_active = True
+        canvas = app.sweep_canvas
+        greens = lambda: [r for r in canvas.rectangles
+                         if r[1].get("fill") == "#0f0"]
+        # erster Messpunkt: nur sein Balken, kein Vollredraw
+        app._sweep_data.append((3_500_000, 10))
+        app._sweep_draw_incr(3_500_000)
+        self.assertEqual(canvas.deleted, 0)
+        self.assertEqual(len(greens()), 1)
+        # dritter Punkt gemessen: Luecke davor (3.6 MHz) wird sofort
+        # interpoliert mitgezeichnet
+        app._sweep_data.append((3_700_000, 30))
+        app._sweep_draw_incr(3_700_000)
+        self.assertEqual(canvas.deleted, 0)   # kein delete("all") pro Punkt
+        self.assertEqual(len(greens()), 3)
+
     def test_no_draw_without_spectrum_data(self):
         app = self._make_app()
         app._sweep_data = None

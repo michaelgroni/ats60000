@@ -40,6 +40,30 @@ def _interp_rssi(freqs: list[int], measured: dict[int, int],
     return round(lo_rssi + (hi_rssi - lo_rssi) * frac)
 
 
+class _SweepPlot:
+    """Geometrie des Spektrum-Canvas: Frequenz/RSSI in Pixel umrechnen."""
+
+    def __init__(self, canvas, freq_range, pad_l, pad_b, pad_t, rssi_max):
+        cw = max(canvas.winfo_width(), 100)
+        ch = max(int(canvas.cget("height")), 100)
+        self.pad_l = pad_l
+        self.pad_t = pad_t
+        self.plot_w = max(cw - pad_l - 2, 10)
+        self.plot_h = max(ch - pad_b - pad_t - 2, 10)
+        self.base_y = pad_t + self.plot_h
+        lo, hi = freq_range
+        self.lo = lo
+        self.hi = hi
+        self.span = max(hi - lo, 1)
+        self._rssi_max = rssi_max
+
+    def fx(self, hz):
+        return self.pad_l + (hz - self.lo) / self.span * self.plot_w
+
+    def fy(self, rssi):
+        return self.base_y - (rssi / self._rssi_max) * self.plot_h
+
+
 class RemoteApp:
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -372,6 +396,12 @@ class RemoteApp:
         self.log(f"Sweep über {status.band}: {lo_khz}–{hi_khz} kHz, "
                  f"{len(self._sweep_freqs)} Punkte, Schrittweite {step_text}, "
                  f"Bandbreite {bw_target}")
+        # Achsengeruest einmalig zeichnen; die Messpunkte werden danach
+        # inkrementell hinzugefuegt (kein Vollredraw pro Punkt)
+        self.sweep_canvas.delete("all")
+        plot = self._sweep_plot()
+        self._sweep_draw_frame(plot)
+        self._sweep_draw_marker(plot)
         self._sweep_advance_setup()
 
     def sweep_stop(self):
@@ -457,7 +487,7 @@ class RemoteApp:
         done = self._sweep_index
         total = len(self._sweep_freqs)
         self.sweep_progress_var.set(f"{done}/{total}")
-        self._sweep_draw()
+        self._sweep_draw_incr(expected_hz)
         if done >= total:
             self._sweep_finish("Fertig")
         else:
@@ -528,6 +558,9 @@ class RemoteApp:
                 pass
         self.log(f"Sweep {self._sweep_message}: "
                  f"{len(self._sweep_data or [])} Punkte")
+        # Abschlusszeichnung: fuellt die letzten Luecken (am rechten Rand
+        # fehlt der rechte Nachbar) und setzt die Frequenzmarke neu
+        self._sweep_draw()
 
     _SWEEP_RSSI_MAX = 127      # RSSI-Skala des Empfaengers (dBuV)
     _SWEEP_PAD_L = 36         # Platz fuer die dBuV-Achse links
@@ -535,86 +568,118 @@ class RemoteApp:
     _SWEEP_PAD_T = 4
     _SWEEP_TICK_FONT = ("", 7)
 
-    def _sweep_draw(self):
-        data = self._sweep_data
-        if not data:
-            return
+    def _sweep_plot(self) -> _SweepPlot:
+        """Aktuelles Layout des Spektrum-Canvas als _SweepPlot."""
+        return _SweepPlot(self.sweep_canvas, self._sweep_freq_range,
+                          self._SWEEP_PAD_L, self._SWEEP_PAD_B,
+                          self._SWEEP_PAD_T, self._SWEEP_RSSI_MAX)
+
+    def _sweep_draw_frame(self, plot: _SweepPlot):
+        """Achsen und Beschriftung zeichnen (einmalig pro Sweep/Redraw)."""
         canvas = self.sweep_canvas
-        canvas.delete("all")
-        cw = max(canvas.winfo_width(), 100)
-        ch = max(int(canvas.cget("height")), 100)
-        pad_l = self._SWEEP_PAD_L
-        pad_b = self._SWEEP_PAD_B
-        pad_t = self._SWEEP_PAD_T
-        plot_w = max(cw - pad_l - 2, 10)
-        plot_h = max(ch - pad_b - pad_t - 2, 10)
-        base_y = pad_t + plot_h
-        lo, hi = self._sweep_freq_range
-        span = max(hi - lo, 1)
-        rssi_max = self._SWEEP_RSSI_MAX
-
-        def fx(hz):
-            return pad_l + (hz - lo) / span * plot_w
-
-        def fy(rssi):
-            return base_y - (rssi / rssi_max) * plot_h
+        pad_l = plot.pad_l
+        pad_t = plot.pad_t
+        base_y = plot.base_y
+        fx = plot.fx
+        fy = plot.fy
 
         # dBuV-Achse links: Ticks alle 20 dB, 0 unten bis 127 oben
-        for rssi in range(0, rssi_max + 1, 20):
+        for rssi in range(0, self._SWEEP_RSSI_MAX + 1, 20):
             y = fy(rssi)
             canvas.create_line(pad_l - 3, y, pad_l, y, fill="#888")
             canvas.create_text(pad_l - 5, y, text=str(rssi), anchor="e",
                                font=self._SWEEP_TICK_FONT, fill="#ccc")
         canvas.create_line(pad_l, pad_t, pad_l, base_y, fill="#888")
         canvas.create_text(pad_l - 5, pad_t - 2, text="dBµV",
-                          anchor="se", font=self._SWEEP_TICK_FONT, fill="#ccc")
+                           anchor="se", font=self._SWEEP_TICK_FONT, fill="#ccc")
 
         # Frequenzachse unten: 5 Ticks, Einheit nach Spanne (MHz/kHz)
+        span = plot.span
         unit = "MHz" if span >= 2_000_000 else "kHz"
         scale = 1_000_000 if unit == "MHz" else 1_000
-        canvas.create_line(pad_l, base_y, pad_l + plot_w, base_y, fill="#888")
+        canvas.create_line(pad_l, base_y, pad_l + plot.plot_w, base_y, fill="#888")
         for i in range(5):
-            hz = lo + i * span / 4
+            hz = plot.lo + i * span / 4
             x = fx(hz)
             canvas.create_line(x, base_y, x, base_y + 3, fill="#888")
             value = hz / scale
             text = f"{value:.2f}" if value < 100 else f"{value:.1f}"
             canvas.create_text(x, base_y + 5, text=text, anchor="n",
                                font=self._SWEEP_TICK_FONT, fill="#ccc")
-        canvas.create_text(pad_l + plot_w, pad_t - 2, text=unit,
+        canvas.create_text(pad_l + plot.plot_w, pad_t - 2, text=unit,
                            anchor="ne", font=self._SWEEP_TICK_FONT, fill="#ccc")
 
-        # Messpunkte als helle Balken; geplante, aber nicht gemessene
-        # Punkte (Radio hat die Frequenz nicht bestätigt, z. B. Rundung am
-        # Bandrand) werden zwischen den naechsten gemessenen Nachbarn
-        # linear interpoliert und als gleichfarbige Balken gezeichnet.
-        # Das Spektrum erscheint so als durchgehende farbige Flaeche.
-        measured = dict(data)
-        freqs_all = self._sweep_freqs or [hz for hz, _ in data]
-        for hz in freqs_all:
-            x = fx(hz)
-            if hz in measured:
-                y = fy(measured[hz])
-            else:
-                rssi = _interp_rssi(freqs_all, measured, hz)
-                if rssi is None:
-                    continue
-                y = fy(rssi)
-            canvas.create_rectangle(x - 1, y, x + 1, base_y,
-                                    fill="#0f0", outline="")
-
-        # Eingestellte Frequenz als vertikale Markierung; waehrend des
-        # Sweeps ist das die Restore-Frequenz, da das Radio gerade das
-        # Band durchfaehrt.
+    def _sweep_draw_marker(self, plot: _SweepPlot):
+        """Eingestellte Frequenz als vertikale Markierung; waehrend des
+        Sweeps ist das die Restore-Frequenz, da das Radio gerade das
+        Band durchfaehrt."""
         if self._sweep_active and self._sweep_restore_freq is not None:
             current_hz = self._sweep_restore_freq
         else:
             status = self._last_status
             current_hz = status.display_frequency_hz() if status else None
-        if current_hz is not None and lo <= current_hz <= hi:
-            x = fx(current_hz)
-            canvas.create_line(x, pad_t, x, base_y,
-                               fill="#f80", width=2)
+        if current_hz is not None and plot.lo <= current_hz <= plot.hi:
+            x = plot.fx(current_hz)
+            self.sweep_canvas.create_line(x, plot.pad_t, x, plot.base_y,
+                                          fill="#f80", width=2)
+
+    def _sweep_draw_bar(self, plot: _SweepPlot, hz: int, rssi: int):
+        """Einen Balken (gemessen oder interpoliert) zeichnen."""
+        x = plot.fx(hz)
+        y = plot.fy(rssi)
+        self.sweep_canvas.create_rectangle(x - 1, y, x + 1, plot.base_y,
+                                           fill="#0f0", outline="")
+
+    def _sweep_draw(self):
+        """Alles zeichnen: nach Sweep-Ende, Band- oder Frequenzwechsel.
+
+        Waehrend des laufenden Sweeps wird dagegen inkrementell gezeichnet
+        (_sweep_on_status -> _sweep_draw_bar): Achsen nur einmal pro Sweep,
+        pro Messpunkt nur der neue Balken samt inzwischen interpolierbarer
+        Luecken davor -- kein delete("all") ueber alle bisherigen Punkte.
+        """
+        data = self._sweep_data
+        if not data:
+            return
+        canvas = self.sweep_canvas
+        canvas.delete("all")
+        plot = self._sweep_plot()
+        self._sweep_draw_frame(plot)
+        measured = dict(data)
+        freqs_all = self._sweep_freqs or [hz for hz, _ in data]
+        for hz in freqs_all:
+            if hz in measured:
+                self._sweep_draw_bar(plot, hz, measured[hz])
+            else:
+                rssi = _interp_rssi(freqs_all, measured, hz)
+                if rssi is not None:
+                    self._sweep_draw_bar(plot, hz, rssi)
+        self._sweep_draw_marker(plot)
+
+    def _sweep_draw_incr(self, hz: int):
+        """Nach einem Messpunkt inkrementell weiterzeichnen.
+
+        Der gerade gemessene Punkt wird gezeichnet; fuer alle noch
+        fehlenden Punkte davor, die sich jetzt interpolieren lassen
+        (weil der Punkt rechts von ihnen gemessen wurde), wird ebenfalls
+        ein Balken gesetzt. Punkte ohne rechten Nachbarn bleiben offen
+        bis zur Abschlusszeichnung.
+        """
+        if self._sweep_freq_range is None or not self._sweep_freqs:
+            return
+        freqs = self._sweep_freqs
+        measured = dict(self._sweep_data or [])
+        idx = freqs.index(hz)
+        plot = self._sweep_plot()
+        self._sweep_draw_bar(plot, hz, measured[hz])
+        for j in range(idx - 1, -1, -1):
+            hz_j = freqs[j]
+            if hz_j in measured:
+                break
+            rssi = _interp_rssi(freqs, measured, hz_j)
+            if rssi is None:
+                break
+            self._sweep_draw_bar(plot, hz_j, rssi)
 
     def _sweep_click(self, event):
         """Klick im Diagramm: zur angeklickten Frequenz tunen."""
