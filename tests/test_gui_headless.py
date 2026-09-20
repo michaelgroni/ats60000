@@ -373,17 +373,40 @@ class SpectrumMarkerTest(unittest.TestCase):
                 self.assertGreaterEqual(d, r + 3)
 
     def test_smeter_needle_follows_metric(self):
+        import math
         from ats_mini_remote import protocol
         app = self._make_app()
         app._last_status = protocol.ReceiverStatus(
             frequency=3_600, mode="AM", band="80M",
             rssi=64, snr=30)
-        # S-Wert-Metrik: Skala S1..S9, Anzeige S9+20
+        # S-Wert-Metrik: Skala S1..S9 plus Bereich +10..+60 ueber S9
         app.smeter_metric_var.value = "S-Wert"
         app._smeter_redraw()
-        texts = [t[1].get("text") for t in app.smeter_canvas.texts]
+        canvas = app.smeter_canvas
+        texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("S9+20", texts)
         self.assertIn("S9", texts)      # Tick-Label
+        self.assertIn("+10", texts)     # Bereich oberhalb S9 vorhanden
+        self.assertIn("+60", texts)
+        # Zeigerposition S9+20 = Position 11 von 15 muss rechts vom
+        # S9-Tick (Position 9 von 15) liegen
+        cx, cy = app._SMETER_PIVOT
+        r = app._SMETER_R
+        s9_text = [t for t in canvas.texts if t[1].get("text") == "S9"][0]
+        s9_angle = math.degrees(
+            math.atan2(cy - s9_text[0][1], s9_text[0][0] - cx))
+        needles = [ln for ln in canvas.lines
+                   if ln[1].get("fill") == app._SMETER_NEEDLE
+                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1]
+        (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
+        needle_angle = math.degrees(
+            math.atan2(cy - y2, x2 - cx))
+        # Zeiger uebernimmt dieselbe Winkelskala wie die Ticks: gleiche
+        # Differenz zum linken Skalenansatz wie die Tick-Position
+        needle_pos = (180 - needle_angle) / 180
+        self.assertGreater(needle_pos, 8 / 14)   # rechts vom S9-Tick
+        self.assertLess(needle_pos, 1.0)
+        self.assertAlmostEqual(needle_pos, 10 / 14, delta=0.02)
         # SNR-Metrik: Ticks 0/15/30/45/60, Text in dB
         app.smeter_metric_var.value = "SNR"
         app._smeter_redraw()

@@ -857,24 +857,26 @@ class RemoteApp:
         """Metrik-abhaengiger Anzeigewert: (0..1, Text, Tick-Labels)."""
         metric = self.smeter_metric_var.get()
         if metric == "S-Wert":
-            # S-Wert 0..9+60 -> 0..1; Ticks S1..S9
+            # Skala S1..S9 mit Bereich darueber (+10..+60 dB ueber S9);
+            # Zeigerwert und Ticks verwenden dieselbe Positionsskala:
+            # 15 Schritte = S1..S9 (9) + 10..60 dB (6)
             s = protocol.s_meter(status.rssi, status.mode.upper() == "FM")
-            num = 0.0
+            ticks = ([f"S{i}" for i in range(1, 10)]
+                     + [f"+{d}" for d in range(10, 61, 10)])
+            pos = 14   # ">S9+60" -> Skalenende
             if s.startswith("S"):
-                body = s[1:].split("+")[0]
+                body, _, over = s[1:].partition("+")
                 try:
-                    num = int(body) / 9.0
+                    pos = int(body) - 1
                 except ValueError:
-                    num = 1.0
-            elif ">" in s:
-                num = 1.0
-            if "+" in s:
-                try:
-                    over = int(s.split("+")[1])
-                    num = (9 + over / 60) / (9 + 60 / 60)
-                except (IndexError, ValueError):
-                    num = 1.0
-            return num, s, [f"S{i}" for i in range(1, 10)]
+                    pos = 8
+                if over:
+                    try:
+                        pos += int(over) // 10
+                    except ValueError:
+                        pass
+            pos = max(0, min(pos, 14))
+            return pos / 14, s, ticks
         if metric == "SNR":
             # SNR 0..60 dB -> 0..1; Ticks alle 15 dB
             v = max(0.0, min(status.snr, 60.0)) / 60.0
