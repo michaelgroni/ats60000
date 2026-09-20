@@ -284,13 +284,12 @@ class SpectrumMarkerTest(unittest.TestCase):
                   if r[1].get("fill") == "#0f0"]
         darks = [r for r in app.sweep_canvas.rectangles
                  if r[1].get("fill") == "#060"]
-        self.assertEqual(len(greens), 2)   # gemessen
-        self.assertEqual(len(darks), 1)   # interpoliert
-        # Verbindungslinie nur ueber die beiden gemessenen Punkte
-        curve = [ln for ln in app.sweep_canvas.lines
-                 if ln[1].get("fill") == "#0a0"]
-        self.assertEqual(len(curve), 1)
-        self.assertEqual(len(curve[0][0]), 4)   # 2 Punkte = 4 Koordinaten
+        self.assertEqual(len(greens), 3)   # 2 gemessen + 1 interpoliert, gleiche Farbe
+        self.assertEqual(len(darks), 0)
+        # keine Kurvenlinie mehr -- nur Achsen
+        curves = [ln for ln in app.sweep_canvas.lines
+                  if ln[1].get("fill") == "#0a0"]
+        self.assertEqual(len(curves), 0)
 
     def test_no_draw_without_spectrum_data(self):
         app = self._make_app()

@@ -587,31 +587,21 @@ class RemoteApp:
         # Messpunkte als helle Balken; geplante, aber nicht gemessene
         # Punkte (Radio hat die Frequenz nicht bestätigt, z. B. Rundung am
         # Bandrand) werden zwischen den naechsten gemessenen Nachbarn
-        # linear interpoliert und als dunkle Balken gezeichnet. Die
-        # Verbindungslinie laeuft nur ueber gemessene Punkte -- sie darf
-        # interpolierte Werte nicht als echt verbinden.
+        # linear interpoliert und als gleichfarbige Balken gezeichnet.
+        # Das Spektrum erscheint so als durchgehende farbige Flaeche.
         measured = dict(data)
         freqs_all = self._sweep_freqs or [hz for hz, _ in data]
-        xs: list[float] = []
-        ys: list[float] = []
         for hz in freqs_all:
             x = fx(hz)
             if hz in measured:
                 y = fy(measured[hz])
-                canvas.create_rectangle(x - 1, y, x + 1, base_y,
-                                        fill="#0f0", outline="")
-                xs.append(x)
-                ys.append(y)
             else:
                 rssi = _interp_rssi(freqs_all, measured, hz)
                 if rssi is None:
                     continue
                 y = fy(rssi)
-                canvas.create_rectangle(x - 1, y, x + 1, base_y,
-                                        fill="#060", outline="")
-        if len(xs) >= 2:
-            canvas.create_line(*[c for p in zip(xs, ys) for c in p],
-                                fill="#0a0", width=1)
+            canvas.create_rectangle(x - 1, y, x + 1, base_y,
+                                    fill="#0f0", outline="")
 
         # Eingestellte Frequenz als vertikale Markierung; waehrend des
         # Sweeps ist das die Restore-Frequenz, da das Radio gerade das
