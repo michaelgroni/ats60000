@@ -131,6 +131,7 @@ class FakeCanvas:
     def __init__(self):
         self.lines = []
         self.rectangles = []
+        self.polygons = []
         self.texts = []
         self.deleted = 0
         self.width = 300
@@ -147,6 +148,9 @@ class FakeCanvas:
 
     def create_rectangle(self, *a, **kw):
         self.rectangles.append((a, kw))
+
+    def create_polygon(self, *a, **kw):
+        self.polygons.append((a, kw))
 
     def create_line(self, *a, **kw):
         self.lines.append((a, kw))
@@ -268,24 +272,24 @@ class SpectrumMarkerTest(unittest.TestCase):
         # dBuV-Skala links und Einheit der Frequenzachse
         self.assertIn("dBµV", texts)
         self.assertIn("kHz", texts)   # 3.5-4 MHz Spanne -> kHz-Beschriftung
-        # RSSI-Ticks 0..120 (alle 20 dB) vorhanden
-        for tick in ("0", "40", "120"):
+        # Achsenmaximum dynamisch: Peak 20 dBuV -> Maximum 60 (Minimum)
+        for tick in ("0", "40", "60"):
             self.assertIn(tick, texts)
+        self.assertNotIn("80", texts)   # ueber Maximum hinaus keine Ticks
 
     def test_missing_points_are_interpolated(self):
         app = self._make_app()
-        # 3 Punkte geplant, mittlerer fehlt -> wird interpoliert (dunkel)
+        # 3 Punkte geplant, mittlerer fehlt -> die Trapeze zwischen den
+        # Punkten fuellen die Luecke lueckenlos (lineare Interpolation)
         app._sweep_data = [(3_500_000, 10), (3_700_000, 30)]
         app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
         app._sweep_marker_hz = None
         app._pending_status = self._status(3_600)
         app._poll_main_thread()
-        greens = [r for r in app.sweep_canvas.rectangles
-                  if r[1].get("fill") == "#0f0"]
-        darks = [r for r in app.sweep_canvas.rectangles
-                 if r[1].get("fill") == "#060"]
-        self.assertEqual(len(greens), 3)   # 2 gemessen + 1 interpoliert, gleiche Farbe
-        self.assertEqual(len(darks), 0)
+        fills = [p for p in app.sweep_canvas.polygons
+                 if p[1].get("fill") == "#0f0"]
+        self.assertEqual(len(fills), 2)   # Trapez 3.5->3.6 und 3.6->3.7
+        self.assertEqual(len(app.sweep_canvas.rectangles), 0)
         # keine Kurvenlinie mehr -- nur Achsen
         curves = [ln for ln in app.sweep_canvas.lines
                   if ln[1].get("fill") == "#0a0"]
@@ -298,19 +302,52 @@ class SpectrumMarkerTest(unittest.TestCase):
         app._sweep_data = []
         app._sweep_active = True
         canvas = app.sweep_canvas
-        greens = lambda: [r for r in canvas.rectangles
-                         if r[1].get("fill") == "#0f0"]
-        # erster Messpunkt: nur sein Balken, kein Vollredraw
-        app._sweep_data.append((3_500_000, 10))
-        app._sweep_draw_incr(3_500_000)
+        fills = lambda: [p for p in canvas.polygons
+                         if p[1].get("fill") == "#0f0"]
+        # erster Messpunkt (Randpunkt 3.5 MHz verpasst): Flaeche vom
+        # linken Rand bis zum Messpunkt, kein Vollredraw
+        app._sweep_data.append((3_600_000, 10))
+        app._sweep_draw_incr(3_600_000)
         self.assertEqual(canvas.deleted, 0)
-        self.assertEqual(len(greens()), 1)
-        # dritter Punkt gemessen: Luecke davor (3.6 MHz) wird sofort
-        # interpoliert mitgezeichnet
+        self.assertEqual(len(fills()), 1)
+        # dritter Punkt gemessen: das Trapez dazwischen deckt die
+        # Luecke sofort ab -- Interpolation als Flaeche
         app._sweep_data.append((3_700_000, 30))
         app._sweep_draw_incr(3_700_000)
         self.assertEqual(canvas.deleted, 0)   # kein delete("all") pro Punkt
-        self.assertEqual(len(greens()), 3)
+        self.assertEqual(len(fills()), 2)
+
+    def test_axis_max_dynamic(self):
+        app = self._make_app()
+        # Maximum = groesster Wert, auf Vielfache von 10 aufgerundet,
+        # aber nie kleiner als 60
+        app._sweep_data = [(3_500_000, 20)]
+        self.assertEqual(app._sweep_scale_max(), 60)   # Minimum
+        app._sweep_data = [(3_500_000, 60)]
+        self.assertEqual(app._sweep_scale_max(), 60)   # exakt 60 bleibt 60
+        app._sweep_data = [(3_500_000, 61)]
+        self.assertEqual(app._sweep_scale_max(), 70)
+        app._sweep_data = [(3_500_000, 10), (3_600_000, 73)]
+        self.assertEqual(app._sweep_scale_max(), 80)
+
+    def test_axis_grows_during_sweep(self):
+        app = self._make_app()
+        app._sweep_freqs = [3_500_000, 3_600_000]
+        app._sweep_data = []
+        app._sweep_active = True
+        canvas = app.sweep_canvas
+        # kleiner Wert: kein Rescale
+        app._sweep_data.append((3_500_000, 40))
+        app._sweep_draw_incr(3_500_000)
+        self.assertEqual(canvas.deleted, 0)
+        self.assertEqual(app._sweep_axis_max, 60)
+        # Wert ueber dem Achsenmaximum: kompletter Redraw mit neuer Skala
+        app._sweep_data.append((3_600_000, 75))
+        app._sweep_draw_incr(3_600_000)
+        self.assertEqual(canvas.deleted, 1)
+        self.assertEqual(app._sweep_axis_max, 80)
+        texts = [t[1].get("text") for t in canvas.texts]
+        self.assertIn("80", texts)   # neue Achse bis 80
 
     def test_no_draw_without_spectrum_data(self):
         app = self._make_app()

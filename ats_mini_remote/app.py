@@ -55,13 +55,13 @@ class _SweepPlot:
         self.lo = lo
         self.hi = hi
         self.span = max(hi - lo, 1)
-        self._rssi_max = rssi_max
+        self.rssi_max = rssi_max
 
     def fx(self, hz):
         return self.pad_l + (hz - self.lo) / self.span * self.plot_w
 
     def fy(self, rssi):
-        return self.base_y - (rssi / self._rssi_max) * self.plot_h
+        return self.base_y - (rssi / self.rssi_max) * self.plot_h
 
 
 class RemoteApp:
@@ -398,6 +398,7 @@ class RemoteApp:
                  f"Bandbreite {bw_target}")
         # Achsengeruest einmalig zeichnen; die Messpunkte werden danach
         # inkrementell hinzugefuegt (kein Vollredraw pro Punkt)
+        self._sweep_axis_max = self._SWEEP_AXIS_MIN
         self.sweep_canvas.delete("all")
         plot = self._sweep_plot()
         self._sweep_draw_frame(plot)
@@ -562,17 +563,25 @@ class RemoteApp:
         # fehlt der rechte Nachbar) und setzt die Frequenzmarke neu
         self._sweep_draw()
 
-    _SWEEP_RSSI_MAX = 127      # RSSI-Skala des Empfaengers (dBuV)
+    _SWEEP_AXIS_MIN = 60       # dBuV: kleineres Achsenmaximum nie sinnvoll
+    _sweep_axis_max = 60       # aktuell gezeichnetes Achsenmaximum
     _SWEEP_PAD_L = 36         # Platz fuer die dBuV-Achse links
     _SWEEP_PAD_B = 16         # Platz fuer die Frequenzachse unten
     _SWEEP_PAD_T = 4
     _SWEEP_TICK_FONT = ("", 7)
 
+    def _sweep_scale_max(self) -> int:
+        """Achsenmaximum: groesster Messwert, auf Vielfache von 10
+        aufgerundet, aber nie kleiner als 60 dBuV."""
+        data = self._sweep_data or []
+        peak = max((rssi for _hz, rssi in data), default=0)
+        return max(self._SWEEP_AXIS_MIN, ((peak + 9) // 10) * 10)
+
     def _sweep_plot(self) -> _SweepPlot:
         """Aktuelles Layout des Spektrum-Canvas als _SweepPlot."""
         return _SweepPlot(self.sweep_canvas, self._sweep_freq_range,
                           self._SWEEP_PAD_L, self._SWEEP_PAD_B,
-                          self._SWEEP_PAD_T, self._SWEEP_RSSI_MAX)
+                          self._SWEEP_PAD_T, self._sweep_axis_max)
 
     def _sweep_draw_frame(self, plot: _SweepPlot):
         """Achsen und Beschriftung zeichnen (einmalig pro Sweep/Redraw)."""
@@ -583,8 +592,8 @@ class RemoteApp:
         fx = plot.fx
         fy = plot.fy
 
-        # dBuV-Achse links: Ticks alle 20 dB, 0 unten bis 127 oben
-        for rssi in range(0, self._SWEEP_RSSI_MAX + 1, 20):
+        # dBuV-Achse links: Ticks alle 20 dB bis zum Achsenmaximum
+        for rssi in range(0, plot.rssi_max + 1, 20):
             y = fy(rssi)
             canvas.create_line(pad_l - 3, y, pad_l, y, fill="#888")
             canvas.create_text(pad_l - 5, y, text=str(rssi), anchor="e",
@@ -623,63 +632,82 @@ class RemoteApp:
             self.sweep_canvas.create_line(x, plot.pad_t, x, plot.base_y,
                                           fill="#f80", width=2)
 
-    def _sweep_draw_bar(self, plot: _SweepPlot, hz: int, rssi: int):
-        """Einen Balken (gemessen oder interpoliert) zeichnen."""
-        x = plot.fx(hz)
-        y = plot.fy(rssi)
-        self.sweep_canvas.create_rectangle(x - 1, y, x + 1, plot.base_y,
-                                           fill="#0f0", outline="")
+    def _sweep_fill(self, plot: _SweepPlot, hz1: int, rssi1: int,
+                    hz2: int, rssi2: int):
+        """Flaeche zwischen zwei Punkten bis zur Basislinie fuellen.
+
+        Das Trapez ist die grafische lineare Interpolation: alle
+        Frequenzen zwischen hz1 und hz2 liegen auf der Verbindungsgeraden,
+        es entstehen keine schwarzen Luecken zwischen den Messpunkten.
+        """
+        x1, x2 = plot.fx(hz1), plot.fx(hz2)
+        if x2 <= x1:
+            return
+        y1, y2 = plot.fy(rssi1), plot.fy(rssi2)
+        self.sweep_canvas.create_polygon(
+            x1, y1, x2, y2, x2, plot.base_y, x1, plot.base_y,
+            fill="#0f0", outline="")
 
     def _sweep_draw(self):
         """Alles zeichnen: nach Sweep-Ende, Band- oder Frequenzwechsel.
 
-        Waehrend des laufenden Sweeps wird dagegen inkrementell gezeichnet
-        (_sweep_on_status -> _sweep_draw_bar): Achsen nur einmal pro Sweep,
-        pro Messpunkt nur der neue Balken samt inzwischen interpolierbarer
-        Luecken davor -- kein delete("all") ueber alle bisherigen Punkte.
+        Achsenmaximum dynamisch aus den Messwerten, dann durchgehende
+        Flaeche: zwischen allen Punkten (gemessen oder interpoliert)
+        wird je ein Trapez bis zur Basislinie gefuellt.
         """
         data = self._sweep_data
         if not data:
             return
+        self._sweep_axis_max = self._sweep_scale_max()
         canvas = self.sweep_canvas
         canvas.delete("all")
         plot = self._sweep_plot()
         self._sweep_draw_frame(plot)
         measured = dict(data)
         freqs_all = self._sweep_freqs or [hz for hz, _ in data]
+        values: list[tuple[int, int]] = []
         for hz in freqs_all:
             if hz in measured:
-                self._sweep_draw_bar(plot, hz, measured[hz])
+                values.append((hz, measured[hz]))
             else:
                 rssi = _interp_rssi(freqs_all, measured, hz)
                 if rssi is not None:
-                    self._sweep_draw_bar(plot, hz, rssi)
+                    values.append((hz, rssi))
+        for (hz1, rssi1), (hz2, rssi2) in zip(values, values[1:]):
+            self._sweep_fill(plot, hz1, rssi1, hz2, rssi2)
         self._sweep_draw_marker(plot)
 
     def _sweep_draw_incr(self, hz: int):
         """Nach einem Messpunkt inkrementell weiterzeichnen.
 
-        Der gerade gemessene Punkt wird gezeichnet; fuer alle noch
-        fehlenden Punkte davor, die sich jetzt interpolieren lassen
-        (weil der Punkt rechts von ihnen gemessen wurde), wird ebenfalls
-        ein Balken gesetzt. Punkte ohne rechten Nachbarn bleiben offen
-        bis zur Abschlusszeichnung.
+        Es wird nur das Trapez vom letzten gemessenen Punkt bis zum
+        neuen Messpunkt gefuellt -- es deckt alle Luecken davor ab, denn
+        die Flaeche zwischen zwei Messpunkten ist deren Interpolation.
+        Uebersteigt der Messwert das aktuelle Achsenmaximum, wird einmal
+        komplett neu gezeichnet (Achse hoher skaliert).
         """
         if self._sweep_freq_range is None or not self._sweep_freqs:
+            return
+        if self._sweep_scale_max() != self._sweep_axis_max:
+            self._sweep_draw()
             return
         freqs = self._sweep_freqs
         measured = dict(self._sweep_data or [])
         idx = freqs.index(hz)
         plot = self._sweep_plot()
-        self._sweep_draw_bar(plot, hz, measured[hz])
+        prev = None
         for j in range(idx - 1, -1, -1):
-            hz_j = freqs[j]
-            if hz_j in measured:
+            if freqs[j] in measured:
+                prev = j
                 break
-            rssi = _interp_rssi(freqs, measured, hz_j)
-            if rssi is None:
-                break
-            self._sweep_draw_bar(plot, hz_j, rssi)
+        rssi = measured[hz]
+        if prev is None:
+            # kein linker Nachbar: einseitige Interpolation, die
+            # Flaeche links davon liegt flach auf dem Messwert
+            self._sweep_fill(plot, plot.lo, rssi, hz, rssi)
+        else:
+            hz_p = freqs[prev]
+            self._sweep_fill(plot, hz_p, measured[hz_p], hz, rssi)
 
     def _sweep_click(self, event):
         """Klick im Diagramm: zur angeklickten Frequenz tunen."""
