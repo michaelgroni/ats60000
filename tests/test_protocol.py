@@ -131,3 +131,13 @@ class ScreenshotDecodeTest(unittest.TestCase):
         self.assertEqual(bmp[:2], b"BM")
         size = int.from_bytes(bmp[2:6], "little")
         self.assertEqual(size, len(bmp))
+
+
+class LocaleNumberTest(unittest.TestCase):
+    def test_fmt_num_uses_active_locale(self):
+        sep = protocol.decimal_separator()
+        self.assertEqual(protocol.fmt_num(3.5, 1), "3" + sep + "5")
+
+    def test_parse_float_accepts_both_separators(self):
+        self.assertEqual(protocol.parse_float("3.5"), 3.5)
+        self.assertEqual(protocol.parse_float(" 3,5 "), 3.5)

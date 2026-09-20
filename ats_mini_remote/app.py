@@ -506,7 +506,8 @@ class RemoteApp:
             return
         hz = self._sweep_freqs[self._sweep_index] \
             if self._sweep_index < len(self._sweep_freqs) else None
-        self.log(f"Keine Bestätigung für {hz / 1000:.1f} kHz – Punkt übersprungen")
+        self.log(f"Keine Bestätigung für {protocol.fmt_num(hz / 1000, 1)} kHz "
+                 "– Punkt übersprungen")
         self._sweep_index += 1
         self.sweep_progress_var.set(
             f"{self._sweep_index}/{len(self._sweep_freqs)}")
@@ -671,7 +672,8 @@ class RemoteApp:
             x = fx(hz)
             canvas.create_line(x, base_y, x, base_y + 3, fill="#888")
             value = hz / scale
-            text = f"{value:.2f}" if value < 100 else f"{value:.1f}"
+            text = (protocol.fmt_num(value, 2) if value < 100
+                    else protocol.fmt_num(value, 1))
             canvas.create_text(x, base_y + 5, text=text, anchor="n",
                                font=self._SWEEP_TICK_FONT, fill="#ccc")
         # Einheit rechts unterhalb der Achsenspitze, mit Abstand zur
@@ -836,7 +838,7 @@ class RemoteApp:
         ssb = status.mode in ("LSB", "USB") if status else False
         try:
             self.send(protocol.format_frequency_command(hz, ssb))
-            self.log(f"Abgestimmt auf {hz / 1000:.1f} kHz")
+            self.log(f"Abgestimmt auf {protocol.fmt_num(hz / 1000, 1)} kHz")
         except ValueError:
             self.log("Frequenz außerhalb des Bands")
 
@@ -848,7 +850,7 @@ class RemoteApp:
     _SMETER_TICK = "#000"
     _SMETER_RED = "#c00"       # roter Bereich am Skalenende
     _SMETER_NEEDLE = "#000"
-    _SMETER_PIVOT = (130, 98)   # Drehpunkt des Zeigers
+    _SMETER_PIVOT = (130, 86)   # Drehpunkt des Zeigers
     _SMETER_R = 60              # Skalenradius
     _SMETER_ARC = 180            # Zeichenauslenkung links->rechts (Grad)
     _SMETER_RED_FROM = 0.85     # ab hier Skalenbereich rot
@@ -959,9 +961,11 @@ class RemoteApp:
         if "Frequenz" in vars_:
             hz = status.display_frequency_hz()
             if status.mode.upper() == "FM":
-                vars_["Frequenz"].set(f"{hz / 1e6:.2f} MHz")
+                vars_["Frequenz"].set(
+                    f"{protocol.fmt_num(hz / 1e6, 2)} MHz")
             else:
-                vars_["Frequenz"].set(f"{hz / 1e3:.3f} kHz")
+                vars_["Frequenz"].set(
+                    f"{protocol.fmt_num(hz / 1e3, 3)} kHz")
         if "Band" in vars_:
             vars_["Band"].set(status.band)
         # Nach Verbindung und Bandwechsel sinnvolle Messpunktzahl waehlen.
@@ -986,11 +990,11 @@ class RemoteApp:
                                   else f"ATTN {status.agc - 1}")
 
     def set_frequency(self):
-        raw = self.freq_entry_var.get().strip().replace(",", ".")
+        raw = self.freq_entry_var.get().strip()
         if not raw:
             return
         try:
-            value = float(raw)
+            value = protocol.parse_float(raw)
         except ValueError:
             messagebox.showerror("Fehler", "Ungültige Frequenzeingabe")
             return
@@ -1066,7 +1070,9 @@ class RemoteApp:
         for iid in self.memory_tree.get_children():
             self.memory_tree.delete(iid)
         for slot, band, freq, mode in sorted(rows):
-            display = f"{freq / 1_000_000:.3f} MHz" if freq >= 10_000_000 else f"{freq / 1000:.0f} kHz"
+            display = (f"{protocol.fmt_num(freq / 1_000_000, 3)} MHz"
+                   if freq >= 10_000_000
+                   else f"{freq / 1000:.0f} kHz")
             self.memory_tree.insert("", tk.END, values=(slot, band, display, mode))
 
     def take_screenshot(self):
@@ -1145,16 +1151,16 @@ class RemoteApp:
                 self.volume_var.set(status.volume)
             hz = status.display_frequency_hz()
             if status.mode.upper() == "FM":
-                self.freq_var.set(f"{hz / 1e6:.2f} MHz")
+                self.freq_var.set(f"{protocol.fmt_num(hz / 1e6, 2)} MHz")
             else:
-                self.freq_var.set(f"{hz / 1e3:.3f} kHz")
+                self.freq_var.set(f"{protocol.fmt_num(hz / 1e3, 3)} kHz")
             self.band_var.set(status.band)
             self.mode_var.set(status.mode)
             self.rssi_var.set(f"{status.rssi} dBµV")
             self.smeter_var.set(
                 protocol.s_meter(status.rssi, status.mode.upper() == "FM"))
             self.snr_var.set(f"{status.snr} dB")
-            self.batt_var.set(f"{status.voltage:.2f} V")
+            self.batt_var.set(f"{protocol.fmt_num(status.voltage, 2)} V")
             self._set_row_values(status)
             self._smeter_redraw()
             # Frequenzmarke im Spektrum nachziehen, wenn die Frequenz
@@ -1208,6 +1214,7 @@ class RemoteApp:
 
 
 def main():
+    protocol.apply_system_locale()
     root = tk.Tk()
     RemoteApp(root)
     root.mainloop()

@@ -12,10 +12,35 @@ ATS-Mini-Projekts (esp32-si4732/ats-mini, Remote.cpp):
 
 from __future__ import annotations
 
+import locale
 import struct
 from dataclasses import dataclass
 
 DEFAULT_PORT = 60000
+
+
+def apply_system_locale() -> None:
+    """"Aktiviert das Locale der Betriebssystemumgebung fuer Zahlen."""
+    try:
+        locale.setlocale(locale.LC_ALL, "")
+    except locale.Error:
+        pass
+
+
+def decimal_separator() -> str:
+    """"Dezimaltrenner des aktiven Locales ('.' oder ',')."""
+    return locale.localeconv()["decimal_point"]
+
+
+def fmt_num(value: float, decimals: int = 2) -> str:
+    """Formatiert eine Zahl mit dem Locale-Dezimaltrenner."""
+    return f"{value:.{decimals}f}".replace(".", decimal_separator())
+
+
+def parse_float(text: str) -> float:
+    """Liest eine Zahl, akzeptiert den Locale- und den Punkt-Trenner."""
+    text = text.strip().replace(decimal_separator(), ".").replace(",", ".")
+    return float(text)
 
 # Feldindizes der Monitor-CSV-Zeile
 STATUS_FIELDS = 15
