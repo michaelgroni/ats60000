@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import bisect
+import math
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -38,6 +40,66 @@ def _interp_rssi(freqs: list[int], measured: dict[int, int],
     hi_rssi = measured[freqs[right]]
     frac = (hz - freqs[left]) / (freqs[right] - freqs[left])
     return round(lo_rssi + (hi_rssi - lo_rssi) * frac)
+
+
+def _curve_at(freqs: list[int], rssis: list[float], hz: float) -> float:
+    """Stueckweise lineare Interpolation des Pegels an der Frequenz hz;
+    ausserhalb der Messpunkte flach fortgesetzt. Grundlage der
+    rasterierten (anti-aliasted) Messflaeche: zwischen zwei Messpunkten
+    liegt jeder Pixel auf der Verbindungsgeraden."""
+    if not freqs:
+        return 0.0
+    if hz <= freqs[0]:
+        return float(rssis[0])
+    if hz >= freqs[-1]:
+        return float(rssis[-1])
+    i = bisect.bisect_right(freqs, hz) - 1
+    f0, f1 = freqs[i], freqs[i + 1]
+    if f1 == f0:
+        return float(rssis[i])
+    frac = (hz - f0) / (f1 - f0)
+    return float(rssis[i] + (rssis[i + 1] - rssis[i]) * frac)
+
+
+def _raster_spectrum(width: int, height: int, main_rgb, peak_rgb, bg_rgb,
+                     columns) -> bytes:
+    """Spektrumflaeche als PPM-Bild rastern, mit Anti-Aliasing.
+
+    columns: je Bildschirmspalte (x, y_peak, y_main, base_y) in Pixeln.
+    Die Abdeckung eines Pixels ist der exakte Anteil, den die Flaeche
+    in der Spalte ueberdeckt: Grenzpixel werden abgestuft statt als
+    harte Treppenstufe gesetzt -- schraege Kurven erscheinen glatt.
+    Die Peak-Hold-Flaeche liegt unter der Hauptflaeche.
+    """
+    n = width * height
+    peak_cov = [0.0] * n
+    main_cov = [0.0] * n
+    for x, y_peak, y_main, base in columns:
+        x = int(x)
+        if not 0 <= x < width:
+            continue
+        for cov, y_top in ((peak_cov, y_peak), (main_cov, y_main)):
+            if y_top >= base:
+                continue
+            y0 = max(int(math.floor(y_top)), 0)
+            y1 = min(int(math.ceil(base)), height)
+            for sy in range(y0, y1):
+                lo = max(y_top, sy)
+                hi = min(base, sy + 1)
+                if hi > lo:
+                    cov[sy * width + x] += hi - lo
+    rows = bytearray()
+    for i in range(n):
+        r, g, b = bg_rgb
+        for cover, rgb in ((peak_cov[i], peak_rgb), (main_cov[i], main_rgb)):
+            c = cover if cover < 1.0 else 1.0
+            if c > 0.0:
+                r += (rgb[0] - r) * c
+                g += (rgb[1] - g) * c
+                b += (rgb[2] - b) * c
+        rows += bytes((int(r), int(g), int(b)))
+    header = f"P6\n{width} {height}\n255\n".encode("ascii")
+    return header + bytes(rows)
 
 
 class _SweepPlot:
@@ -667,22 +729,9 @@ class RemoteApp:
                                           fill="#f80", width=2)
 
     _SWEEP_PEAK_FILL = "#060"   # Peak-Hold: blasseres Gruen
-
-    def _sweep_fill(self, plot: _SweepPlot, hz1: int, rssi1: int,
-                    hz2: int, rssi2: int, color: str = "#0f0"):
-        """Flaeche zwischen zwei Punkten bis zur Basislinie fuellen.
-
-        Das Trapez ist die grafische lineare Interpolation: alle
-        Frequenzen zwischen hz1 und hz2 liegen auf der Verbindungsgeraden,
-        es entstehen keine schwarzen Luecken zwischen den Messpunkten.
-        """
-        x1, x2 = plot.fx(hz1), plot.fx(hz2)
-        if x2 <= x1:
-            return
-        y1, y2 = plot.fy(rssi1), plot.fy(rssi2)
-        self.sweep_canvas.create_polygon(
-            x1, y1, x2, y2, x2, plot.base_y, x1, plot.base_y,
-            fill=color, outline="")
+    _SWEEP_MAIN_RGB = (0x0f, 0xf0, 0x00)   # Hauptflaeche
+    _SWEEP_PEAK_RGB = (0x06, 0x60, 0x00)   # Peak-Hold-Flaeche
+    _SWEEP_BG_RGB = (0x00, 0x00, 0x00)     # Canvas-Hintergrund
 
     def _sweep_range_or_band(self) -> tuple[int, int] | None:
         """Frequenzbereich fuer die Achsen: Sweep-Bereich, sonst aktuelles
@@ -699,14 +748,41 @@ class RemoteApp:
             return None
         return int(rng[0]) * 1000, int(rng[1]) * 1000
 
+    def _sweep_columns(self, plot: _SweepPlot, freqs: list[int],
+                        rssis: list[float], peaks: list[float]):
+        """Je Bildschirmspalte Spaltenoberkanten fuer Haupt- und Peak-
+        Flaeche berechnen (pixelgenaue, stueckweise lineare Kurve).
+        """
+        columns = []
+        for px in range(int(plot.pad_l),
+                        int(plot.pad_l + plot.plot_w) + 1):
+            # Frequenz an der Mitte der Spalte
+            hz = plot.lo + (px - plot.pad_l) / plot.plot_w * plot.span
+            rssi = _curve_at(freqs, rssis, hz)
+            peak = _curve_at(freqs, peaks, hz)
+            y_main = plot.fy(rssi)
+            y_peak = plot.fy(peak)
+            columns.append((px, y_peak, y_main, plot.base_y))
+        return columns
+
+    def _sweep_image(self, plot: _SweepPlot, columns) -> None:
+        """Flaeche als anti-aliasted PPM-Bild unter die Achsen legen."""
+        canvas = self.sweep_canvas
+        cw = max(canvas.winfo_width(), 100)
+        ch = max(int(canvas.cget("height")), 100)
+        ppm = _raster_spectrum(cw, ch, self._SWEEP_MAIN_RGB,
+                               self._SWEEP_PEAK_RGB, self._SWEEP_BG_RGB,
+                               columns)
+        self._sweep_photo = tk.PhotoImage(data=ppm, format="PPM")
+        canvas.create_image(0, 0, image=self._sweep_photo, anchor="nw")
+
     def _sweep_draw(self):
         """Alles zeichnen: nach Sweep-Ende, Band- oder Frequenzwechsel.
 
         Ohne Spektrumdaten werden nur Achsen und Frequenzmarke gezeigt
         (Bereich aus dem aktuellen Band). Mit Daten: Achsenmaximum
-        dynamisch aus den Messwerten, dann durchgehende Flaeche --
-        zwischen allen Punkten (gemessen oder interpoliert) wird je ein
-        Trapez bis zur Basislinie gefuellt.
+        dynamisch aus den Messwerten, dann durchgehende, anti-aliaste
+        Flaeche als Bild unter den Vektor-Achsen.
         """
         data = self._sweep_data
         canvas = self.sweep_canvas
@@ -734,25 +810,23 @@ class RemoteApp:
                 rssi = _interp_rssi(freqs_all, measured, hz)
                 if rssi is not None:
                     values.append((hz, rssi))
-        # Peak-Hold-Flaeche (blass) unter der Hauptflaeche: sichtbar bleibt
-        # sie nur, wo fruehere Werte ueber dem aktuellen Spektrum lagen
-        peaks = [(hz, self._sweep_peak.get(hz, rssi))
+        freqs = [hz for hz, _rssi in values]
+        rssis = [float(r) for _hz, r in values]
+        peaks = [float(self._sweep_peak.get(hz, rssi))
                  for hz, rssi in values]
-        for (hz1, rssi1), (hz2, rssi2) in zip(peaks, peaks[1:]):
-            self._sweep_fill(plot, hz1, rssi1, hz2, rssi2,
-                             color=self._SWEEP_PEAK_FILL)
-        for (hz1, rssi1), (hz2, rssi2) in zip(values, values[1:]):
-            self._sweep_fill(plot, hz1, rssi1, hz2, rssi2)
+        columns = self._sweep_columns(plot, freqs, rssis, peaks)
+        self._sweep_image(plot, columns)
         self._sweep_draw_marker(plot)
 
     def _sweep_draw_incr(self, hz: int):
         """Nach einem Messpunkt inkrementell weiterzeichnen.
 
-        Es wird nur das Trapez vom letzten gemessenen Punkt bis zum
-        neuen Messpunkt gefuellt -- es deckt alle Luecken davor ab, denn
-        die Flaeche zwischen zwei Messpunkten ist deren Interpolation.
-        Uebersteigt der Messwert das aktuelle Achsenmaximum, wird einmal
-        komplett neu gezeichnet (Achse hoher skaliert).
+        Nur die Bildspalten vom letzten gemessenen Punkt bis zum neuen
+        Messpunkt werden neu rastert und per PhotoImage.put gesetzt --
+        sie decken alle Luecken davor ab, denn die Flaeche zwischen zwei
+        Messpunkten ist deren Interpolation. Uebersteigt der Messwert
+        das aktuelle Achsenmaximum, wird einmal komplett neu gezeichnet
+        (Achse hoeher skaliert).
         """
         if self._sweep_freq_range is None or not self._sweep_freqs:
             return
@@ -768,20 +842,61 @@ class RemoteApp:
             if freqs[j] in measured:
                 prev = j
                 break
-        rssi = measured[hz]
-        peak = self._sweep_peak.get(hz, rssi)
-        if prev is None:
-            # kein linker Nachbar: einseitige Interpolation, die
-            # Flaeche links davon liegt flach auf dem Messwert
-            self._sweep_fill(plot, plot.lo, peak, hz, peak,
-                             color=self._SWEEP_PEAK_FILL)
-            self._sweep_fill(plot, plot.lo, rssi, hz, rssi)
-        else:
-            hz_p = freqs[prev]
-            peak_p = self._sweep_peak.get(hz_p, measured[hz_p])
-            self._sweep_fill(plot, hz_p, peak_p, hz, peak,
-                             color=self._SWEEP_PEAK_FILL)
-            self._sweep_fill(plot, hz_p, measured[hz_p], hz, rssi)
+        # Bereich der neuen Spalten: vom linken gemessenen Nachbarn
+        # (bzw. Bandanfang) bis zum neuen Messpunkt
+        left_hz = freqs[prev] if prev is not None else plot.lo
+        x_from = int(plot.fx(min(left_hz, hz)))
+        x_to = int(plot.fx(max(left_hz, hz)))
+        if x_to < x_from:
+            return
+        # Kurvenpunkte im Intervall fuer die Interpolation
+        pts = [(f, measured[f]) for f in freqs
+               if left_hz <= f <= hz and f in measured]
+        if not pts:
+            return
+        curve_f = [p[0] for p in pts]
+        curve_r = [float(p[1]) for p in pts]
+        curve_p = [float(self._sweep_peak.get(p[0], p[1])) for p in pts]
+        # Randwert links des Intervalls (flache Fortsetzung)
+        if curve_f[0] > left_hz + 1:
+            curve_f.insert(0, left_hz)
+            curve_r.insert(0, curve_r[0])
+            curve_p.insert(0, curve_p[0])
+        canvas = self.sweep_canvas
+        ch = max(int(canvas.cget("height")), 100)
+        width = x_to - x_from + 1
+        block = []
+        for sy in range(ch):
+            row = []
+            for px in range(x_from, x_to + 1):
+                hz_px = plot.lo + (px - plot.pad_l) / plot.plot_w * plot.span
+                rssi = _curve_at(curve_f, curve_r, hz_px)
+                peak = _curve_at(curve_f, curve_p, hz_px)
+                y_main = plot.fy(rssi)
+                y_peak = plot.fy(peak)
+                row.append(self._raster_pixel(plot, sy, y_peak, y_main))
+            block.append(" ".join(row))
+        if width > 0:
+            self._sweep_photo.put("{" + "\n".join(block) + "}",
+                                  to=(x_from, 0))
+
+    def _raster_pixel(self, plot: _SweepPlot, sy: int,
+                      y_peak: float, y_main: float) -> str:
+        """Einen Bildpunkt als Tk-Farbwert rastern: Abdeckung der Peak-
+        und Hauptflaeche in dieser Pixelzelle, analytisch geglaettet
+        (Anteil je Flaeche, Mischung auf schwarzem Grund)."""
+        base = plot.base_y
+        r, g, b = self._SWEEP_BG_RGB
+        for y_top, rgb in ((y_peak, self._SWEEP_PEAK_RGB),
+                           (y_main, self._SWEEP_MAIN_RGB)):
+            lo = max(y_top, sy)
+            hi = min(base, sy + 1)
+            if hi > lo:
+                c = hi - lo
+                r += (rgb[0] - r) * c
+                g += (rgb[1] - g) * c
+                b += (rgb[2] - b) * c
+        return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
 
     def _sweep_on_resize(self, event):
         """Bei Groessenaenderung neu zeichnen: das Spektrum passt sich
@@ -1055,6 +1170,7 @@ class RemoteApp:
     _sweep_mode: str = ""
     _sweep_marker_hz: int | None = None
     _sweep_axes_band: str = ""
+    _sweep_photo = None
     _sweep_peak: dict[int, int] = {}
     _sweep_ema: dict[int, int] = {}
     _sweep_prev: dict[int, int] = {}

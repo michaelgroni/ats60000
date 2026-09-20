@@ -78,7 +78,7 @@ def make_tkinter_mock():
     mod.Canvas = FakeWidget
     mod.NORMAL = "normal"
     mod.DISABLED = "disabled"
-    mod.PhotoImage = lambda **kw: None
+    mod.PhotoImage = FakePhotoImage
 
     ttk = types.ModuleType("tkinter.ttk")
     setattr(ttk, "Frame", FakeFrame)
@@ -125,6 +125,16 @@ class GuiSmokeTest(unittest.TestCase):
         self.assertTrue(True)
 
 
+class FakePhotoImage:
+    """Stub fuer PhotoImage: put zaehlt die Datenbloecke."""
+
+    def __init__(self, **kw):
+        self.puts = []
+
+    def put(self, data, to=None):
+        self.puts.append((data, to))
+
+
 class FakeCanvas:
     """Zeichenoperationen mitzaehlen statt darstellen."""
 
@@ -132,6 +142,7 @@ class FakeCanvas:
         self.lines = []
         self.rectangles = []
         self.polygons = []
+        self.images = []
         self.texts = []
         self.deleted = 0
         self.width = 300
@@ -151,6 +162,9 @@ class FakeCanvas:
 
     def create_polygon(self, *a, **kw):
         self.polygons.append((a, kw))
+
+    def create_image(self, *a, **kw):
+        self.images.append((a, kw))
 
     def create_line(self, *a, **kw):
         self.lines.append((a, kw))
@@ -225,6 +239,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._sweep_restore_freq = None
         application._sweep_mode = "LSB"
         application.sweep_canvas = FakeCanvas()
+        application._sweep_photo = FakePhotoImage()
         application.volume_var = FakeVar()
         application.freq_var = FakeVar()
         application.band_var = FakeVar()
@@ -289,10 +304,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         app._sweep_marker_hz = None
         app._pending_status = self._status(3_600)
         app._poll_main_thread()
-        fills = [p for p in app.sweep_canvas.polygons
-                 if p[1].get("fill") == "#0f0"]
-        self.assertEqual(len(fills), 2)   # Trapez 3.5->3.6 und 3.6->3.7
-        self.assertEqual(len(app.sweep_canvas.rectangles), 0)
+        # Messflaeche als anti-aliasted Bild unter den Achsen
+        self.assertEqual(len(app.sweep_canvas.images), 1)
+        self.assertEqual(len(app.sweep_canvas.polygons), 0)
         # keine Kurvenlinie mehr -- nur Achsen
         curves = [ln for ln in app.sweep_canvas.lines
                   if ln[1].get("fill") == "#0a0"]
@@ -305,20 +319,19 @@ class SpectrumMarkerTest(unittest.TestCase):
         app._sweep_data = []
         app._sweep_active = True
         canvas = app.sweep_canvas
-        fills = lambda: [p for p in canvas.polygons
-                         if p[1].get("fill") == "#0f0"]
+        puts = lambda: len(app._sweep_photo.puts)
         # erster Messpunkt (Randpunkt 3.5 MHz verpasst): Flaeche vom
-        # linken Rand bis zum Messpunkt, kein Vollredraw
+        # linken Rand bis zum Messpunkt als put-Block, kein Vollredraw
         app._sweep_data.append((3_600_000, 10))
         app._sweep_draw_incr(3_600_000)
         self.assertEqual(canvas.deleted, 0)
-        self.assertEqual(len(fills()), 1)
-        # dritter Punkt gemessen: das Trapez dazwischen deckt die
+        self.assertEqual(puts(), 1)
+        # dritter Punkt gemessen: die Spalten dazwischen decken die
         # Luecke sofort ab -- Interpolation als Flaeche
         app._sweep_data.append((3_700_000, 30))
         app._sweep_draw_incr(3_700_000)
         self.assertEqual(canvas.deleted, 0)   # kein delete("all") pro Punkt
-        self.assertEqual(len(fills()), 2)
+        self.assertEqual(puts(), 2)
 
     def test_axis_max_dynamic(self):
         app = self._make_app()
@@ -388,14 +401,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         app._sweep_peak = {3_500_000: 40, 3_600_000: 30}
         app._pending_status = self._status(3_600)
         app._poll_main_thread()
-        pale = [p for p in app.sweep_canvas.polygons
-                if p[1].get("fill") == "#060"]
-        main = [p for p in app.sweep_canvas.polygons
-                if p[1].get("fill") == "#0f0"]
-        self.assertEqual(len(pale), 1)   # ein Peak-Trapez
-        self.assertEqual(len(main), 1)   # ein Haupt-Trapez
-        # Peak-Trapez liegt im Voll-Draw unter dem Haupt-Trapez
-        self.assertEqual(len(app.sweep_canvas.polygons), 2)
+        # Flaeche als ein Bild; Peak und Hauptflaeche sind darin gerastert
+        self.assertEqual(len(app.sweep_canvas.images), 1)
+        self.assertEqual(len(app.sweep_canvas.polygons), 0)
 
     def test_peak_drawn_incrementally(self):
         app = self._make_app()
@@ -408,12 +416,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         app._sweep_data.append((3_600_000, 40))
         app._sweep_peak = {3_600_000: 40}
         app._sweep_draw_incr(3_600_000)
-        pale = [p for p in canvas.polygons
-                if p[1].get("fill") == "#060"]
-        main = [p for p in canvas.polygons
-                if p[1].get("fill") == "#0f0"]
-        self.assertEqual(len(pale), 1)
-        self.assertEqual(len(main), 1)
+        self.assertEqual(len(app._sweep_photo.puts), 1)
 
     def test_axis_unit_is_visible(self):
         app = self._make_app()
@@ -439,6 +442,22 @@ class SpectrumMarkerTest(unittest.TestCase):
                      if t[1].get("text") not in ("dBµV",))
         self.assertLessEqual(last_x, 300 - 10)
 
+    def test_spectrum_fill_is_antialiased(self):
+        from ats_mini_remote.app import _raster_spectrum
+        # Kante bei y=24.5: der Grenzpixel ist halb bedeckt statt
+        # einer harten Treppenstufe (Anti-Aliasing)
+        ppm = _raster_spectrum(1, 140, (15, 240, 0), (6, 96, 0),
+                               (0, 0, 0), [(0, 50.0, 24.5, 120.0)])
+        header_end = ppm.index(b"\n255\n") + 5
+        pixels = ppm[header_end:]
+        def px(y):
+            return tuple(pixels[y*3:y*3+3])
+        self.assertEqual(px(23), (0, 0, 0))        # frei
+        self.assertEqual(px(25), (15, 240, 0))    # voll bedeckt
+        edge = px(24)
+        self.assertGreater(edge[1], 0)
+        self.assertLess(edge[1], 240)              # abgestuft
+
     def test_resize_redraws_spectrum(self):
         app = self._make_app()
         app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
@@ -449,9 +468,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         canvas.width = 600
         app._sweep_on_resize(None)
         self.assertEqual(canvas.deleted, 1)
-        fills = [p for p in canvas.polygons
-                 if p[1].get("fill") == "#0f0"]
-        self.assertGreaterEqual(len(fills), 1)
+        self.assertEqual(len(canvas.images), 1)   # Flaeche als Bild
 
     def test_axes_drawn_without_spectrum_data(self):
         app = self._make_app()
