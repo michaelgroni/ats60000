@@ -29,12 +29,26 @@ BANDS = [
     ("VHF", 76000, 108000, ["FM"], 100000),
 ]
 
-# wie Firmware Menu.cpp: amSteps (S = vorwaerts im Zyklus)
-STEPS = ["1k", "5k", "9k", "10k", "50k", "100k", "1M"]
-# wie Firmware Menu.cpp: amBandwidths (W = vorwaerts im Zyklus)
-BANDWIDTHS = ["1.0k", "1.8k", "2.0k", "2.5k", "3.0k", "4.0k", "6.0k"]
+# wie Firmware Menu.cpp: fmSteps/ssbSteps/amSteps je Modus
+# (S = vorwaerts im Zyklus); SSB-Texte sind wie in der Firmware in Hz.
+MODE_STEPS = {
+    "FM": ["10k", "50k", "100k", "200k", "1M"],
+    "SSB": ["10", "25", "50", "100", "500", "1k", "5k", "9k", "10k"],
+    "AM": ["1k", "5k", "9k", "10k", "50k", "100k", "1M"],
+}
+STEPS = MODE_STEPS["AM"]  # abwaertskompatibel (AM-Liste)
+# wie Firmware Menu.cpp: defaultStepIdx[4] = { 2, 5, 5, 1 } (FM, LSB, USB, AM)
+DEFAULT_STEP_IDX = {"FM": 2, "SSB": 5, "AM": 1}
+# wie Firmware Menu.cpp: fmBandwidths/ssbBandwidths/amBandwidths (W = vorwaerts)
+MODE_BANDWIDTHS = {
+    "FM": ["Auto", "110k", "84k", "60k", "40k"],
+    "SSB": ["0.5k", "1.0k", "1.2k", "2.2k", "3.0k", "4.0k"],
+    "AM": ["1.0k", "1.8k", "2.0k", "2.5k", "3.0k", "4.0k", "6.0k"],
+}
+BANDWIDTHS = MODE_BANDWIDTHS["AM"]  # abwaertskompatibel (AM-Liste)
+# wie Firmware Menu.cpp: defaultBwIdx[4] = { 0, 4, 4, 4 } (FM, LSB, USB, AM)
+DEFAULT_BANDWIDTH_IDX = {"FM": 0, "SSB": 4, "AM": 4}
 
-BFO_STEPS = [50, 100, 250]
 
 
 class MockState:
@@ -78,26 +92,61 @@ class MockState:
     def display_freq_khz(self):
         return self.frequency + self.bfo // 1000
 
+    def step_kind(self):
+        return "FM" if self.mode() == "FM" else "SSB" if self.is_ssb() else "AM"
+
+    def step_list(self):
+        return MODE_STEPS[self.step_kind()]
+
+    def bandwidth_list(self):
+        return MODE_BANDWIDTHS[self.step_kind()]
+
+    def step_desc(self):
+        return self.step_list()[self.step_idx % len(self.step_list())]
+
+    def bandwidth_desc(self):
+        return self.bandwidth_list()[self.bandwidth_idx % len(self.bandwidth_list())]
+
     def step_khz(self):
-        text = STEPS[self.step_idx]
-        if text.endswith("M"):
+        text = self.step_desc().lower()
+        if text.endswith("m"):
             return int(float(text[:-1]) * 1000)
-        return int(text.rstrip("k"))
+        if text.endswith("k"):
+            return int(text[:-1])
+        return max(1, int(text) // 1000)
 
     def rotate_frequency(self, direction: int):
         freq = self.frequency + direction * self.step_khz()
         _name, lo, hi = self.band()[:3]
         self.frequency = max(lo, min(hi, freq))
 
+    def rotate_mode(self, direction: int):
+        """Wie doMode() der Firmware: LSB -> USB -> AM -> LSB zyklisch.
+
+        FM kann per Befehl weder betreten noch verlassen werden.
+        Der Modus wird im Band gespeichert; Schrittweite und Bandbreite
+        springen auf die Modus-Defaults (defaultStepIdx/defaultBwIdx).
+        """
+        if self.mode() == "FM":
+            return
+        modes = [m for m in self.band()[3] if m != "FM"]
+        cur = modes.index(self.mode())
+        self.mode_idx = self.band()[3].index(
+            modes[(cur + direction) % len(modes)])
+        kind = "SSB" if self.is_ssb() else "AM"
+        self.step_idx = DEFAULT_STEP_IDX[kind]
+        self.bandwidth_idx = DEFAULT_BANDWIDTH_IDX[kind]
+
     def status_csv(self):
         with self.lock:
             self.seqnum = (self.seqnum + 1) % 256
-            step_desc = STEPS[self.step_idx] if not self.is_ssb() else BFO_STEPS[self.step_idx % len(BFO_STEPS)]
+            step_desc = self.step_desc()
+            bw_desc = self.bandwidth_desc()
             # FM-Status meldet Frequenz in 10-kHz-Schritten, AM/SSB in kHz
             freq_field = self.frequency // 10 if self.mode() == "FM" else self.frequency
             return (
                 f"{self.version},{freq_field},{self.bfo},{self.cal},{self.band()[0]},"
-                f"{self.mode()},{step_desc},{BANDWIDTHS[self.bandwidth_idx]},"
+                f"{self.mode()},{step_desc},{bw_desc},"
                 f"{self.agc_idx},{self.volume},{self.rssi},{self.snr},"
                 f"{self.capacitor},{self.voltage:.2f},{self.seqnum}\r\n"
             ).encode("ascii")
@@ -311,17 +360,17 @@ class MockHandler(socketserver.BaseRequestHandler):
             state.frequency = state.band()[4]
             state.bfo = 0
         elif line == b"M":
-            state.mode_idx = (state.mode_idx + 1) % len(state.modes())
+            state.rotate_mode(1)
         elif line == b"m":
-            state.mode_idx = (state.mode_idx - 1) % len(state.modes())
+            state.rotate_mode(-1)
         elif line == b"S":
-            state.step_idx = (state.step_idx + 1) % len(STEPS)
+            state.step_idx = (state.step_idx + 1) % len(state.step_list())
         elif line == b"s":
-            state.step_idx = (state.step_idx - 1) % len(STEPS)
+            state.step_idx = (state.step_idx - 1) % len(state.step_list())
         elif line == b"W":
-            state.bandwidth_idx = (state.bandwidth_idx + 1) % len(BANDWIDTHS)
+            state.bandwidth_idx = (state.bandwidth_idx + 1) % len(state.bandwidth_list())
         elif line == b"w":
-            state.bandwidth_idx = (state.bandwidth_idx - 1) % len(BANDWIDTHS)
+            state.bandwidth_idx = (state.bandwidth_idx - 1) % len(state.bandwidth_list())
         elif line == b"A":
             state.agc_idx = (state.agc_idx + 1) % 8
         elif line == b"a":

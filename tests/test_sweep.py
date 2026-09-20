@@ -161,5 +161,208 @@ class SuggestedPointsTest(unittest.TestCase):
 
 
 
+class ModeStepsTest(unittest.TestCase):
+    def test_am_to_lsb_needs_one_up(self):
+        # Zyklus LSB -> USB -> AM -> LSB: AM -> LSB ist 1x M
+        self.assertEqual(protocol.mode_steps("AM", "LSB"), b"M")
+
+    def test_lsb_to_am_needs_one_down(self):
+        self.assertEqual(protocol.mode_steps("LSB", "AM"), b"m")
+
+    def test_same_mode_is_no_command(self):
+        self.assertEqual(protocol.mode_steps("AM", "AM"), b"")
+        self.assertEqual(protocol.mode_steps("LSB", "LSB"), b"")
+
+    def test_fm_never_changes(self):
+        # FM kann per Befehl weder betreten noch verlassen werden
+        self.assertEqual(protocol.mode_steps("FM", "AM"), b"")
+        self.assertEqual(protocol.mode_steps("AM", "FM"), b"")
+
+    def test_shortest_path(self):
+        # LSB -> AM: 1x m statt 2x M
+        self.assertEqual(protocol.mode_steps("LSB", "AM"), b"m")
+        # USB -> LSB: 1x m statt 2x M
+        self.assertEqual(protocol.mode_steps("USB", "LSB"), b"m")
+
+
+class ModeDefaultsTest(unittest.TestCase):
+    def test_default_step_matches_firmware(self):
+        # Menu.cpp: defaultStepIdx[4] = { 2, 5, 5, 1 } (FM, LSB, USB, AM)
+        self.assertEqual(protocol.default_step("FM"), "100k")
+        self.assertEqual(protocol.default_step("LSB"), "1k")
+        self.assertEqual(protocol.default_step("USB"), "1k")
+        self.assertEqual(protocol.default_step("AM"), "5k")
+
+    def test_default_bandwidth_matches_firmware(self):
+        # Menu.cpp: defaultBwIdx[4] = { 0, 4, 4, 4 } (FM, LSB, USB, AM)
+        self.assertEqual(protocol.default_bandwidth("FM"), "Auto")
+        self.assertEqual(protocol.default_bandwidth("LSB"), "3.0k")
+        self.assertEqual(protocol.default_bandwidth("AM"), "3.0k")
+
+    def test_ssb_step_list_matches_firmware(self):
+        # Menu.cpp: ssbSteps hat 9 Eintraege (inkl. 9k, 10k)
+        self.assertEqual(
+            protocol.SSB_STEPS,
+            ["10", "25", "50", "100", "500", "1k", "5k", "9k", "10k"])
+
+
+class SuggestedPointsModeIndependenceTest(unittest.TestCase):
+    def test_same_for_any_mode(self):
+        # Empfehlung haengt nur vom Band ab, nicht vom eingestellten Modus
+        for band in ("80M", "40M", "31M", "VHF"):
+            values = {protocol.suggested_sweep_points(band, mode)
+                      for mode in ("AM", "LSB", "USB")}
+            self.assertEqual(len(values), 1, band)
+
+    def test_80m_resolves_ssb_even_in_am(self):
+        # 80M ist ein Amateurband: ~1-kHz-Raster, auch bei AM-Empfang
+        self.assertEqual(protocol.suggested_sweep_points("80M", "AM"), 500)
+
+    def test_ambiguous_band_uses_current_frequency(self):
+        # '15M' ist Rundfunkband (AM, 18900-19100) und Amateurband (USB,
+        # 21000-21500): ohne Frequenz zaehlt der Modus, mit Frequenz der
+        # Bereich, in dem die aktuelle Frequenz liegt.
+        self.assertEqual(protocol.suggested_sweep_points("15M", "AM"), 21)
+        self.assertEqual(protocol.suggested_sweep_points("15M", "USB"), 500)
+        # 19 MHz: Rundfunkband -> 10-kHz-Raster
+        self.assertEqual(
+            protocol.suggested_sweep_points("15M", "USB", 19_050_000), 21)
+        # 21,2 MHz: Amateurband -> 1-kHz-Raster
+        self.assertEqual(
+            protocol.suggested_sweep_points("15M", "AM", 21_200_000), 500)
+
+
+class BandTableModeTest(unittest.TestCase):
+    def test_amateur_bands_are_ssb(self):
+        self.assertEqual(protocol.band_table_mode("80M"), "LSB")
+        self.assertEqual(protocol.band_table_mode("20M"), "USB")
+
+    def test_broadcast_bands_are_am(self):
+        self.assertEqual(protocol.band_table_mode("31M"), "AM")
+
+    def test_vhf_is_fm(self):
+        self.assertEqual(protocol.band_table_mode("VHF"), "FM")
+
+    def test_unknown_band(self):
+        self.assertIsNone(protocol.band_table_mode("XX"))
+
+
+class MockModeSwitchTest(unittest.TestCase):
+    """Mock bildet doMode() der Firmware nach: Defaults + Zyklus."""
+
+    def setUp(self):
+        from ats_mini_remote.mock_receiver import MockState
+        self.state = MockState()
+        # 80m-Band: Modi AM/LSB/USB laut Bandtabelle des Mocks
+        idx = [b[0] for b in __import__(
+            "ats_mini_remote.mock_receiver", fromlist=["BANDS"]).BANDS].index("80m")
+        self.state.band_idx = idx
+
+    def test_switch_resets_step_and_bandwidth_defaults(self):
+        state = self.state
+        state.mode_idx = 0            # AM
+        state.step_idx = 3            # 10k
+        state.bandwidth_idx = 0       # 1.0k
+        state.rotate_mode(1)          # AM -> LSB
+        self.assertEqual(state.mode(), "LSB")
+        # defaultStepIdx[SSB] = 5 -> '1k', defaultBwIdx[SSB] = 4 -> '3.0k'
+        self.assertEqual(state.step_desc(), "1k")
+        self.assertEqual(state.bandwidth_desc(), "3.0k")
+
+    def test_switch_back_restores_original_settings(self):
+        state = self.state
+        state.mode_idx = 0            # AM
+        state.step_idx = 3            # 10k
+        state.bandwidth_idx = 6       # 6.0k
+        state.rotate_mode(1)          # -> LSB (Defaults 1k / 3.0k)
+        state.rotate_mode(-1)         # -> AM (Defaults 5k / 3.0k)
+        self.assertEqual(state.mode(), "AM")
+        self.assertEqual(state.step_desc(), "5k")
+        self.assertEqual(state.bandwidth_desc(), "3.0k")
+
+    def test_step_desc_follows_mode(self):
+        state = self.state
+        state.mode_idx = 1            # LSB (SSB-Liste)
+        self.assertIn(state.step_desc(),
+                      ["10", "25", "50", "100", "500", "1k", "5k", "9k", "10k"])
+
+
+class SweepSetupOrderTest(unittest.TestCase):
+    """Befehlsfolge fuer einen Sweep mit Moduswechsel (80M, AM eingestellt)."""
+
+    def test_mode_switch_commands(self):
+        # AM -> LSB: 1x M; danach Schrittweite/Bandbreite setzen
+        self.assertEqual(protocol.mode_steps("AM", "LSB"), b"M")
+        self.assertEqual(protocol.band_table_mode("80M"), "LSB")
+        # Nach Rueckwechsel LSB -> AM: Defaults 5k/3.0k auf Originalwerte
+        # zurueckstellen (hier: Original 10k/6.0k)
+        step_cmd = protocol.step_steps(protocol.default_step("AM"), "10k", "AM")
+        bw_cmd = protocol.bandwidth_steps(
+            protocol.default_bandwidth("AM"), "6.0k", "AM")
+        self.assertTrue(step_cmd)
+        self.assertTrue(bw_cmd)
+
+
+class ModeSwitchSweepIntegrationTest(unittest.TestCase):
+    """Moduswechsel gegen den Mock: Defaults, Rueckwechsel, Restore."""
+
+    def setUp(self):
+        import threading
+        from ats_mini_remote.mock_receiver import MockServer, MockState
+        from ats_mini_remote.client import RemoteClient
+        self._RemoteClient = RemoteClient
+        self._threading = threading
+        sock = __import__("socket").socket()
+        sock.bind(("127.0.0.1", 0))
+        self.port = sock.getsockname()[1]
+        sock.close()
+        state = MockState()
+        idx = [b[0] for b in __import__(
+            "ats_mini_remote.mock_receiver", fromlist=["BANDS"]).BANDS].index("80m")
+        state.band_idx = idx
+        self.server = MockServer(address=("127.0.0.1", self.port), state=state)
+        self.state = state
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(target=self.server.status_loop,
+                         kwargs={"interval": 0.05}, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def _status(self, client):
+        import time
+        deadline = time.time() + 3
+        last = None
+        while time.time() < deadline:
+            with self.state.lock:
+                if self.state.mode() == "LSB":
+                    return True
+            time.sleep(0.02)
+        return False
+
+    def test_mode_switch_and_restore(self):
+        import time
+        client = self._RemoteClient()
+        client.connect("127.0.0.1", self.port)
+        try:
+            client.send(b"t")
+            time.sleep(0.3)
+            with self.state.lock:
+                self.assertEqual(self.state.mode(), "AM")
+            client.send(b"M")          # AM -> LSB
+            time.sleep(0.3)
+            with self.state.lock:
+                self.assertEqual(self.state.mode(), "LSB")
+                self.assertEqual(self.state.step_desc(), "1k")
+                self.assertEqual(self.state.bandwidth_desc(), "3.0k")
+            client.send(b"m")          # LSB -> AM
+            time.sleep(0.3)
+            with self.state.lock:
+                self.assertEqual(self.state.mode(), "AM")
+        finally:
+            client.disconnect()
+
+
 if __name__ == "__main__":
     unittest.main()

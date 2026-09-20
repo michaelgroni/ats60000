@@ -267,10 +267,17 @@ class RemoteApp:
         points = max(10, min(500, points))
 
         lo_khz, hi_khz = rng
-        ssb = status.mode in ("LSB", "USB")
+        # Sweep-Modus: der Natur des Bandes laut Bandtabelle folgen, nicht
+        # dem zufaellig eingestellten Modus (z. B. 80M trotz AM auf LSB).
+        # FM-Baender laufen ohnehin nur in FM; mode_cmd ist dann leer.
+        sweep_mode = protocol.band_table_mode(
+            status.band, status.display_frequency_hz(),
+            status.mode) or status.mode
+        mode_cmd = protocol.mode_steps(status.mode, sweep_mode)
+        self._sweep_mode = sweep_mode
         spacing_hz = (hi_khz - lo_khz) * 1000 / (points - 1)
         # Passende Schrittweite: Sweepraster = zugehoeriges Schrittweiten-Raster
-        step_text = protocol.step_for_spacing(spacing_hz, status.mode)
+        step_text = protocol.step_for_spacing(spacing_hz, sweep_mode)
         step = protocol.step_hz(step_text)
         self._sweep_freqs = protocol.aligned_sweep_freqs(
             int(lo_khz) * 1000, int(hi_khz) * 1000, step)
@@ -282,23 +289,45 @@ class RemoteApp:
         self._sweep_freq_range = (self._sweep_freqs[0], self._sweep_freqs[-1])
         self._sweep_restore_freq = status.display_frequency_hz()
         # Bandbreite etwa auf die Messpunktschrittweite einstellen
-        bw_target = protocol.bandwidth_for_step(step / 1000, status.mode)
+        bw_target = protocol.bandwidth_for_step(step / 1000, sweep_mode)
+        # Reihenfolge: Modus zuerst, denn doMode() der Firmware setzt
+        # Schrittweite und Bandbreite auf die Modus-Defaults zurueck;
+        # deshalb werden beide nach einem Moduswechsel immer gesetzt.
         self._sweep_setups = []   # (name, cmd_bytes, restore-Wert, ist-Wert)
-        if status.step != step_text:
+        self._sweep_restore_setup = None
+        if mode_cmd:
+            self._sweep_setups.append((
+                "Modus", mode_cmd, status.mode, sweep_mode))
+            # Schrittweite/Bandbreite des Ausgangszustands nach dem
+            # Modus-Rueckwechsel explizit wiederherstellen (doMode()
+            # setzt beide auf die Modus-Defaults zurueck)
+            restore = self._last_status
+            if restore is not None:
+                restore_step_cmd = protocol.step_steps(
+                    protocol.default_step(restore.mode), restore.step,
+                    restore.mode)
+                restore_bw_cmd = protocol.bandwidth_steps(
+                    protocol.default_bandwidth(restore.mode), restore.bandwidth,
+                    restore.mode)
+                self._sweep_restore_setup = (restore_step_cmd, restore_bw_cmd)
+        if status.step != step_text or mode_cmd:
             self._sweep_setups.append((
                 "Schrittweite",
-                protocol.step_steps(status.step, step_text, status.mode),
+                protocol.step_steps(status.step, step_text, sweep_mode),
                 status.step, step_text))
-        if status.bandwidth != bw_target:
+        if status.bandwidth != bw_target or mode_cmd:
             self._sweep_setups.append((
                 "Bandbreite",
                 protocol.bandwidth_steps(status.bandwidth, bw_target,
-                                          status.mode),
+                                        sweep_mode),
                 status.bandwidth, bw_target))
         self._sweep_applied = []
         self._sweep_active = True
         self.sweep_start_button.config(state=tk.DISABLED)
         self.sweep_stop_button.config(state=tk.NORMAL)
+        if sweep_mode != status.mode:
+            self.log(f"Modus für Sweep: {sweep_mode} "
+                     f"(vorher {status.mode}, wird zurückgestellt)")
         self.log(f"Sweep über {status.band}: {lo_khz}–{hi_khz} kHz, "
                  f"{len(self._sweep_freqs)} Punkte, Schrittweite {step_text}, "
                  f"Bandbreite {bw_target}")
@@ -317,8 +346,8 @@ class RemoteApp:
             self._sweep_finish("Fertig")
             return
         hz = self._sweep_freqs[self._sweep_index]
-        status = self._last_status
-        ssb = status.mode in ("LSB", "USB") if status else False
+        # waehrend des Sweeps gilt der Sweep-Modus, nicht der Originalmodus
+        ssb = self._sweep_mode in ("LSB", "USB")
         try:
             self.send(protocol.format_frequency_command(hz, ssb))
         except ValueError:
@@ -364,7 +393,12 @@ class RemoteApp:
             return
         if self._sweep_phase_setup is not None:
             name, _cmd, _restore, target = self._sweep_phase_setup
-            current = status.bandwidth if name == "Bandbreite" else status.step
+            if name == "Modus":
+                current = status.mode
+            elif name == "Bandbreite":
+                current = status.bandwidth
+            else:
+                current = status.step
             if current == target:
                 self._sweep_disarm_timeout()
                 self._sweep_phase_setup = None
@@ -391,16 +425,16 @@ class RemoteApp:
             self._sweep_next()
 
     def _sweep_advance_setup(self):
-        """Naechste Einstellung (Schrittweite/Bandbreite) setzen."""
+        """Naechste Einstellung (Modus/Schrittweite/Bandbreite) setzen."""
         if not self._sweep_active:
             return
         if self._sweep_setups:
             name, cmd, restore, target = self._sweep_setups.pop(0)
             self._sweep_phase_setup = (name, cmd, restore, target)
-            # Umkehrung merken (S<->s, W<->w): kehrt die Bewegung auf dem
-            # zyklischen Index immer korrekt zurueck, unabhaengig davon,
+            # Umkehrung merken (M<->m, S<->s, W<->w): kehrt die Bewegung auf
+            # dem zyklischen Index immer korrekt zurueck, unabhaengig davon,
             # ob der Status die Aenderung schon gemeldet hat.
-            inverse = cmd.translate(bytes.maketrans(b"SWsw", b"swSW"))
+            inverse = cmd.translate(bytes.maketrans(b"MSWmsw", b"mswMSW"))
             self._sweep_applied.append((name, inverse, restore, target))
             self.send(cmd)
             self._sweep_arm_timeout()
@@ -414,14 +448,24 @@ class RemoteApp:
         self._sweep_message = message
         self._sweep_active = False
         # Einstellungen per Umkehrbefehl zurueckstellen; die Firmware
-        # verarbeitet Einzelzeichen-Befehle (S/s/W/w) sofort und in
+        # verarbeitet Einzelzeichen-Befehle (M/m/S/s/W/w) sofort und in
         # Reihenfolge, sodass die Umkehrung den Ausgangszustand
         # wiederherstellt, unabhaengig vom Statusstand.
         while self._sweep_applied:
             _name, inverse, _restore, _target = self._sweep_applied.pop()
             if inverse:
                 self.send(inverse)
+        # Sonderfall Moduswechsel: doMode() der Firmware setzt nach dem
+        # Rueckwechsel Schrittweite und Bandbreite auf die Modus-Defaults
+        # zurueck, nicht auf die urspruenglichen Werte. Beide werden daher
+        # nach dem Modus-Rueckwechsel gezielt auf den Ausgangszustand
+        # gestellt (leerer Befehl, wenn sie bereits passen).
         self._sweep_setups = []
+        if self._sweep_restore_setup is not None:
+            step_cmd, bw_cmd = self._sweep_restore_setup
+            self.send(step_cmd)
+            self.send(bw_cmd)
+            self._sweep_restore_setup = None
         self._sweep_really_finish()
 
     def _sweep_really_finish(self):
@@ -433,6 +477,8 @@ class RemoteApp:
         restore = self._sweep_restore_freq
         if restore is not None:
             status = self._last_status
+            # Der Modus wurde bereits zurueckgestellt; die Frequenz wird
+            # im Originalmodus gesendet (BFO-Stellen unter 1 kHz)
             ssb = status.mode in ("LSB", "USB") if status else False
             try:
                 self.send(protocol.format_frequency_command(restore, ssb))
@@ -500,14 +546,14 @@ class RemoteApp:
                 vars_["Frequenz"].set(f"{hz / 1e3:.3f} kHz")
         if "Band" in vars_:
             vars_["Band"].set(status.band)
-        # Nach Verbindung, Band- und Moduswechsel sinnvolle Messpunktzahl
-        # waehlen (SSB braucht ein deutlich feineres Raster als AM/FM)
+        # Nach Verbindung und Bandwechsel sinnvolle Messpunktzahl waehlen.
+        # Die Empfehlung haengt nur vom Band ab (dessen Natur laut Bandtabelle),
+        # nicht vom eingestellten Modus; ein Moduswechsel aendert sie nicht.
         if (self._sweep_points_pending
-                or status.band != self._sweep_points_band
-                or status.mode != self._sweep_points_mode):
+                or status.band != self._sweep_points_band):
             self._sweep_points_band = status.band
-            self._sweep_points_mode = status.mode
-            points = protocol.suggested_sweep_points(status.band, status.mode)
+            points = protocol.suggested_sweep_points(
+                status.band, status.mode, status.display_frequency_hz())
             self.sweep_points_var.set(str(points))
             self._sweep_points_pending = False
         if "Modus" in vars_:
@@ -714,11 +760,12 @@ class RemoteApp:
     _sweep_phase_setup: tuple | None = None
     _sweep_setups: list = []
     _sweep_applied: list = []
+    _sweep_restore_setup: tuple[bytes, bytes] | None = None
     _sweep_message: str = ""
     _sweep_restore_freq: int | None = None
+    _sweep_mode: str = ""
     _sweep_points_pending: bool = False
     _sweep_points_band: str = ""
-    _sweep_points_mode: str = ""
 
 
 def main():

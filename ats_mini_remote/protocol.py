@@ -288,8 +288,57 @@ CMD_SCREENSHOT = b"C"
 # S/s laufen zyklisch durch diese Liste; der Status meldet den Text.
 # FM: kHz, SSB: Hz, AM: kHz (Einheiten wie in der Firmware-Tabelle).
 FM_STEPS = ["10k", "50k", "100k", "200k", "1M"]
-SSB_STEPS = ["10", "25", "50", "100", "500", "1k", "5k"]
+SSB_STEPS = ["10", "25", "50", "100", "500", "1k", "5k", "9k", "10k"]
 AM_STEPS = ["1k", "5k", "9k", "10k", "50k", "100k", "1M"]
+
+# Modi in Firmware-Reihenfolge (Menu.cpp: bandModeDesc). M/m laufen im
+# Zyklus LSB -> USB -> AM -> LSB; FM ist nur auf FM-Baendern moeglich und
+# kann per Befehl weder betreten noch verlassen werden (doMode).
+NON_FM_MODES = ["LSB", "USB", "AM"]
+
+
+def mode_steps(current: str, target: str) -> bytes:
+    """Befehlsfolge (M/m), um von 'current' auf 'target' zu kommen.
+
+    Wie doMode() der Firmware: pro M/m genau ein Schritt im Zyklus
+    LSB -> USB -> AM -> LSB, FM wird uebersprungen. Bereits passender
+    Modus oder FM als Quelle oder Ziel -> leerer Befehl.
+    """
+    cur = current.upper()
+    tgt = target.upper()
+    if cur == tgt or cur == "FM" or tgt == "FM":
+        return b""
+    i_cur = NON_FM_MODES.index(cur)
+    i_tgt = NON_FM_MODES.index(tgt)
+    n = len(NON_FM_MODES)
+    fwd = (i_tgt - i_cur) % n
+    rev = (i_cur - i_tgt) % n
+    if rev < fwd:
+        return CMD_MODE_DOWN * rev
+    return CMD_MODE_UP * fwd
+
+
+# Modus-Defaults der Firmware (Menu.cpp: defaultStepIdx/defaultBwIdx):
+# doMode() setzt Schrittweite und Bandbreite bei jedem Moduswechsel
+# auf diese Werte zurueck (getCurrentStep/getCurrentBandwidth).
+def default_step(mode: str) -> str:
+    """Schrittweite, die die Firmware nach einem Moduswechsel einstellt."""
+    m = mode.upper()
+    if m == "FM":
+        return FM_STEPS[2]
+    if m in ("LSB", "USB"):
+        return SSB_STEPS[5]
+    return AM_STEPS[1]
+
+
+def default_bandwidth(mode: str) -> str:
+    """Bandbreite, die die Firmware nach einem Moduswechsel einstellt."""
+    m = mode.upper()
+    if m == "FM":
+        return FM_BANDWIDTHS[0]
+    if m in ("LSB", "USB"):
+        return SSB_BANDWIDTHS[4]
+    return AM_BANDWIDTHS[4]
 
 
 def step_list(mode: str) -> list[str]:
@@ -405,23 +454,60 @@ def bandwidth_for_step(step_khz: float, mode: str) -> str:
     return entries[-1]
 
 
-def suggested_sweep_points(band: str, mode: str) -> int:
-    """Sinnvolle Messpunktzahl fuer das Band (10..500).
+def band_entry(band_name: str, current_hz: int = 0,
+               mode: str | None = None) -> tuple[str, str, int, int] | None:
+    """Bandtabelleneintrag (Name, Modus, min_kHz, max_kHz) fuer ein Band.
 
-    Ziel ist ein Rasterabstand, der zum Modus passt:
-    - SSB: ~1 kHz, damit Verbindungen (knapp 3 kHz breit) einzeln
-      aufgeloest werden
-    - AM: ~10 kHz Kanalabstand
-    - FM: ~200 kHz Kanalabstand
+    Bandnamen sind nicht eindeutig ('15M' ist Rundfunk- UND Amateurband):
+    Bevorzugt wird der Eintrag, der die aktuelle Frequenz enthaelt, dann
+    der mit passendem Modus, sonst der erste Treffer des Namens.
     """
-    rng = band_range(band, mode)
-    if rng is None:
+    entries = [e for e in BANDS if e[0].upper() == band_name.upper()]
+    if not entries:
+        return None
+    if current_hz > 0:
+        for entry in entries:
+            if entry[2] * 1000 <= current_hz <= entry[3] * 1000:
+                return entry
+    if mode:
+        for entry in entries:
+            if entry[1].upper() == mode.upper():
+                return entry
+    return entries[0]
+
+
+def band_table_mode(band: str, current_hz: int = 0,
+                    mode: str | None = None) -> str | None:
+    """Modus des Bandes laut Bandtabelle (z. B. '80M' -> 'LSB')."""
+    entry = band_entry(band, current_hz, mode)
+    return entry[1] if entry else None
+
+
+def suggested_sweep_points(band: str, mode: str | None = None,
+                           current_hz: int = 0) -> int:
+    """Sinnvolle Messpunktzahl, abhaengig nur vom Band (10..500).
+
+    Das Raster richtet sich nach der Natur des Bandes laut Bandtabelle,
+    nicht nach dem aktuell eingestellten Modus:
+    - Amateurbaender (Bandtabelle: LSB/USB): ~1 kHz, damit SSB-
+      Verbindungen (knapp 3 kHz breit) auch dann einzeln aufloesbar
+      sind, wenn der Empfaenger gerade auf AM steht
+    - VHF (FM): ~200 kHz Kanalabstand
+    - Rundfunkbaender (AM): ~10 kHz Kanalabstand
+
+    Bandnamen sind nicht eindeutig ('15M' ist Rundfunk- und Amateurband);
+    mit current_hz wird der Eintrag gewaehlt, der die aktuelle Frequenz
+    enthaelt, sonst der mit passendem Modus.
+    """
+    entry = band_entry(band, current_hz, mode)
+    if entry is None:
         return 60
-    lo, hi = rng
+    _name, entry_mode, lo, hi = entry
     span_khz = hi - lo
-    if mode.upper() in ("LSB", "USB"):
+    table_mode = entry_mode.upper()
+    if table_mode in ("LSB", "USB"):
         spacing = 1
-    elif mode.upper() == "FM":
+    elif table_mode == "FM":
         spacing = 200
     else:
         spacing = 10
@@ -437,10 +523,10 @@ def sweep_points_for_band(band: str, mode: str,
     Der Sweep umfasst genau den MHz-Bereich, in dem die aktuelle
     Frequenz liegt (z. B. 15000-16000 kHz bei 15,2 MHz).
     """
-    rng = band_range(band, mode)
-    if rng is None:
+    entry = band_entry(band, current_hz, mode)
+    if entry is None:
         return None
-    lo, hi = rng
+    _name, _entry_mode, lo, hi = entry
     if band.upper() == "ALL":
         if current_hz <= 0:
             return None
