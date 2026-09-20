@@ -2,11 +2,37 @@
 
 from __future__ import annotations
 
+import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from . import __version__
 from . import protocol
 from .client import RemoteClient
+
+PROJECT_URL = "https://github.com/michaelgroni/ats60000"
+
+
+def app_version() -> str:
+    """Versionsanzeige: Release-Tag wenn moeglich, sonst Dev-Kennung.
+
+    Bei einem Checkout mit Git-Tags (z. B. dem Release-Build) ergibt
+    'git describe' den Release; Development-Builds ohne passenden
+    Tag zeigen Abstand und Kurz-Hash ('0.1-14-g1a2b3c4'), damit der
+    exakte Build identifizierbar bleibt. Ohne Git-Zugriff (z. B. EXE
+    ausserhalb eines Repos) bleibt die Paketversion.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "describe", "--tags", "--long", "--match", "v[0-9]*"],
+            capture_output=True, text=True, timeout=2, check=True)
+        described = out.stdout.strip().lstrip("v")
+        distance, _, _hash = described.rpartition("-g")
+        if distance.endswith("-0"):
+            return distance[:-2]  # exakt am Tag: reiner Release
+        return described
+    except (OSError, subprocess.SubprocessError):
+        return __version__
 
 
 def _interp_rssi(freqs: list[int], measured: dict[int, int],
@@ -99,6 +125,7 @@ class RemoteApp:
 
     def _build_ui(self):
         pad = {"padx": 6, "pady": 3}
+        self._build_menu()
         outer = ttk.Frame(self.root)
         outer.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
@@ -272,13 +299,49 @@ class RemoteApp:
         self.shot_label = ttk.Label(shot, text="Kein Screenshot")
         self.shot_label.grid(row=0, column=2, padx=8)
 
-        # Log
-        logbox = ttk.LabelFrame(outer, text="Log")
-        logbox.pack(fill=tk.BOTH, expand=True, **pad)
-        self.log_text = tk.Text(logbox, height=6, state=tk.DISABLED, font=("Courier", 9))
+        # Log (per Menue Ansicht ein-/ausblendbar; Programmstart: aus)
+        self.logbox = ttk.LabelFrame(outer, text="Log")
+        self._log_visible = False
+        self.log_text = tk.Text(self.logbox, height=6, state=tk.DISABLED,
+                                font=("Courier", 9))
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
         self.root.bind("<Return>", lambda _e: self.set_frequency())
+
+    def _build_menu(self):
+        """Menueleiste: Ansicht (Log) und Hilfe (Website, Ueber)."""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        view_menu = tk.Menu(menubar, tearoff=0)
+        view_menu.add_command(label="Log anzeigen", command=self.toggle_log)
+        menubar.add_cascade(label="Ansicht", menu=view_menu)
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="Website", command=self.open_website)
+        help_menu.add_command(label="Über", command=self.show_about)
+        menubar.add_cascade(label="Hilfe", menu=help_menu)
+        self._view_menu = view_menu
+
+    def toggle_log(self):
+        """Log-Anzeige ein-/ausblenden (Startzustand: ausgeblendet)."""
+        self._log_visible = not self._log_visible
+        if self._log_visible:
+            self.logbox.pack(fill=tk.BOTH, expand=True,
+                             padx=6, pady=3)
+        else:
+            self.logbox.pack_forget()
+        self._view_menu.entryconfigure(
+            0, label="Log ausblenden" if self._log_visible
+            else "Log anzeigen")
+
+    def open_website(self):
+        import webbrowser
+        webbrowser.open(PROJECT_URL)
+
+    def show_about(self):
+        messagebox.showinfo(
+            "Über",
+            f"ATS-Mini WLAN-Fernbedienung\nVersion {app_version()}\n\n"
+            f"Projektseite:\n{PROJECT_URL}")
 
     # ------------------------------------------------------ Aktionen am Radio
 

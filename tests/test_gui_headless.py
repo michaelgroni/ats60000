@@ -14,6 +14,7 @@ class FakeWidget:
         self.parent = parent
         self.children = []
         self.kwargs = dict(kwargs)
+        self.pack_kwargs = None
         if hasattr(parent, "children"):
             parent.children.append(self)
 
@@ -40,7 +41,14 @@ class FakeWidget:
                     "its content windows")
 
     def config(self, **kw):
-        pass
+        self.config_kwargs = dict(kw)
+
+    def pack(self, **kw):
+        self.pack_kwargs = dict(kw)
+        self._register_manager("pack")
+
+    def pack_forget(self):
+        self.pack_kwargs = None
 
     def columnconfigure(self, *a, **kw):
         pass
@@ -76,6 +84,23 @@ def make_tkinter_mock():
     mod.IntVar = tk_var
     mod.Text = FakeWidget
     mod.END = "end"
+    class FakeMenu(FakeWidget):
+        def __init__(self, parent, *args, **kwargs):
+            super().__init__(parent, *args, **kwargs)
+            self.entries = []
+            self.cascades = []
+            self.config_calls = []
+
+        def add_command(self, **kw):
+            self.entries.append(kw)
+
+        def add_cascade(self, **kw):
+            self.cascades.append(kw)
+
+        def entryconfigure(self, index, **kw):
+            self.config_calls.append((index, kw))
+
+    mod.Menu = FakeMenu
     mod.Canvas = FakeWidget
     mod.NORMAL = "normal"
     mod.DISABLED = "disabled"
@@ -101,6 +126,9 @@ def make_tkinter_mock():
     sys.modules["tkinter.ttk"] = ttk
     sys.modules["tkinter.filedialog"] = sub
     sys.modules["tkinter.messagebox"] = mb
+    web = types.ModuleType("webbrowser")
+    web.open = lambda url: None
+    sys.modules["webbrowser"] = web
     return mod
 
 
@@ -124,6 +152,67 @@ class GuiSmokeTest(unittest.TestCase):
         application._build_ui()
         # Kein Exception -> Aufbau ok
         self.assertTrue(True)
+
+    def test_menus_and_log_toggle(self):
+        make_tkinter_mock()
+        for name in list(sys.modules):
+            if name.startswith("ats_mini_remote.app"):
+                del sys.modules[name]
+        from ats_mini_remote import app as app_mod
+
+        root = FakeFrame(None)
+        application = object.__new__(app_mod.RemoteApp)
+        application.root = root
+        application.client = None
+        application._row_value_vars = {}
+        application._pending_memory = []
+        application._screenshot = None
+        application._build_ui()
+
+        # Menueleiste: Ansicht und Hilfe mit den besprochenen Eintraegen
+        menubar = root.config_kwargs.get("menu")
+        self.assertIsNotNone(menubar)
+        labels = [c["label"] for c in menubar.cascades]
+        self.assertIn("Ansicht", labels)
+        self.assertIn("Hilfe", labels)
+        view = [c["menu"] for c in menubar.cascades
+                if c["label"] == "Ansicht"][0]
+        help_menu = [c["menu"] for c in menubar.cascades
+                     if c["label"] == "Hilfe"][0]
+        self.assertEqual([e["label"] for e in view.entries],
+                         ["Log anzeigen"])
+        self.assertEqual([e["label"] for e in help_menu.entries],
+                         ["Website", "Über"])
+
+        # Log ist bei Programmstart ausgeblendet
+        self.assertFalse(application._log_visible)
+        self.assertIsNone(application.logbox.pack_kwargs)
+        # Ein-/Ausblenden schaltet Sichtbarkeit und Menueetikett
+        view.entries[0]["command"]()
+        self.assertTrue(application._log_visible)
+        self.assertIsNotNone(application.logbox.pack_kwargs)
+        self.assertEqual(view.config_calls[-1][1]["label"],
+                         "Log ausblenden")
+        view.entries[0]["command"]()
+        self.assertFalse(application._log_visible)
+        self.assertIsNone(application.logbox.pack_kwargs)
+
+        # Ueber-Dialog enthaelt die Version, Website oeffnet die Projektseite
+        from ats_mini_remote import app as app2
+        shown = []
+        app2.messagebox.showinfo = lambda title, text: shown.append((title, text))
+        help_menu.entries[1]["command"]()
+        self.assertEqual(shown[0][0], "Über")
+        self.assertIn("Version", shown[0][1])
+        self.assertIn(app2.PROJECT_URL, shown[0][1])
+
+    def test_app_version_format(self):
+        make_tkinter_mock()
+        from ats_mini_remote import app as app_mod
+        version = app_mod.app_version()
+        self.assertTrue(version)
+        # Release '0.1' oder Dev-Kennung '0.1-<n>-g<hash>' oder Fallback
+        self.assertRegex(version, r"^\d+\.\d+(-\d+-g[0-9a-f]+)?$")
 
 
 class FakeCanvas:
