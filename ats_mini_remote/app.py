@@ -801,8 +801,12 @@ class RemoteApp:
         pad_l = self._SWEEP_PAD_L
         plot_w = max(cw - pad_l - self._SWEEP_PAD_R, 10)
         hz = lo + (event.x - pad_l) / plot_w * span
-        hz = int(round((hz // 1000) * 1000))
         status = self._last_status
+        # Klickfrequenz auf ein Vielfaches der eingestellten Schrittweite
+        # runden: das Radio springt dann exakt auf eine Rasterfrequenz
+        step = protocol.step_hz(status.step) if status else 1000
+        step = max(step, 1)
+        hz = int(round(round(hz / step) * step))
         ssb = status.mode in ("LSB", "USB") if status else False
         try:
             self.send(protocol.format_frequency_command(hz, ssb))

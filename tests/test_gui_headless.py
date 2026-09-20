@@ -315,6 +315,27 @@ class SpectrumMarkerTest(unittest.TestCase):
         last_tick_x = max(t[0][0] for t in freq_ticks)
         self.assertGreater(unit[0][0], last_tick_x)
 
+    def test_click_snaps_to_step(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._sweep_data = [(3_500_000, 30), (3_700_000, 40)]
+        app._sweep_freqs = [3_500_000, 3_600_000, 3_700_000]
+        app._sweep_freq_range = (3_500_000, 3_700_000)
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M", step="5k")
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+        app.log = lambda msg: None
+        # Klick irgendewo ins Diagramm
+        class Ev:
+            x = 150
+        app._sweep_click(Ev())
+        self.assertEqual(len(sent), 1)
+        # Frequenz im Befehl muss durch 5 kHz teilbar sein
+        cmd = sent[0].decode("latin1")
+        hz = int(cmd[1:]) * 1000
+        self.assertEqual(hz % 5000, 0, cmd)
+
     def test_incremental_draw_during_sweep(self):
         app = self._make_app()
         # 3 Punkte geplant, Reihenfolge wie beim Sweep von links nach rechts
