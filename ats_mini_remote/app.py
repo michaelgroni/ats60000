@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import __version__
+from . import i18n
 from . import protocol
 from .client import RemoteClient
 
@@ -94,13 +95,13 @@ class _SweepPlot:
 class RemoteApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("ATS-Miniradio V1 – WLAN-Fernbedienung")
+        root.title(self._t("app_title"))
         root.minsize(560, 520)
 
         self.client = RemoteClient(
             on_status=self.on_status,
             on_memory=self.on_memory,
-            on_line=self.log,
+            on_line=self._on_radio_line,
             on_disconnect=self.on_disconnect,
             on_screenshot=self.on_screenshot,
             on_screenshot_progress=self.on_screenshot_progress,
@@ -109,6 +110,8 @@ class RemoteApp:
         self._screenshot: protocol.Screenshot | None = None
         self._volume_target = 0
         self._row_value_vars: dict[str, tk.StringVar] = {}
+        self._lang_var = tk.StringVar(value=i18n.current() or "Deutsch")
+        self._memory_refresh_id: str | None = None
         self._sweep_active = False
         self._sweep_freqs: list[int] = []
         self._sweep_index = 0
@@ -124,6 +127,9 @@ class RemoteApp:
 
     # ----------------------------------------------------------- Oberfläche
 
+    def _t(self, key: str, **kwargs) -> str:
+        return i18n.get_translator()(key, **kwargs)
+
     def _build_ui(self):
         pad = {"padx": 6, "pady": 3}
         self._build_menu()
@@ -131,21 +137,21 @@ class RemoteApp:
         outer.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
         # Verbindungsleiste
-        conn = ttk.LabelFrame(outer, text="Verbindung")
+        conn = ttk.LabelFrame(outer, text=self._t("connection"))
         conn.pack(fill=tk.X, **pad)
-        ttk.Label(conn, text="Host:").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(conn, text=self._t("host")).grid(row=0, column=0, sticky="w", padx=4, pady=4)
         self.host_var = tk.StringVar(value="atsmini.local")
         ttk.Entry(conn, textvariable=self.host_var, width=20).grid(row=0, column=1, padx=2)
-        ttk.Label(conn, text="Port:").grid(row=0, column=2, sticky="w", padx=4)
+        ttk.Label(conn, text=self._t("port")).grid(row=0, column=2, sticky="w", padx=4)
         self.port_var = tk.StringVar(value=str(protocol.DEFAULT_PORT))
         ttk.Entry(conn, textvariable=self.port_var, width=7).grid(row=0, column=3, padx=2)
-        self.connect_button = ttk.Button(conn, text="Verbinden", command=self.connect)
+        self.connect_button = ttk.Button(conn, text=self._t("connect"), command=self.connect)
         self.connect_button.grid(row=0, column=4, padx=6)
-        self.state_label = ttk.Label(conn, text="Getrennt", foreground="#a00")
+        self.state_label = ttk.Label(conn, text=self._t("disconnected"), foreground="#a00")
         self.state_label.grid(row=0, column=5, sticky="w", padx=6)
 
         # Status
-        status = ttk.LabelFrame(outer, text="Empfänger")
+        status = ttk.LabelFrame(outer, text=self._t("receiver"))
         status.pack(fill=tk.X, **pad)
         self.freq_var = tk.StringVar(value="–")
         self.band_var = tk.StringVar(value="–")
@@ -155,24 +161,24 @@ class RemoteApp:
         self.snr_var = tk.StringVar(value="–")
         self.batt_var = tk.StringVar(value="–")
         for col, (label, var) in enumerate([
-            ("Frequenz", self.freq_var),
-            ("Band", self.band_var),
-            ("Modus", self.mode_var),
-            ("Signalstärke", self.rssi_var),
-            ("S-Wert", self.smeter_var),
-            ("SNR", self.snr_var),
-            ("Batterie", self.batt_var),
+            ("frequency", self.freq_var),
+            ("band", self.band_var),
+            ("mode", self.mode_var),
+            ("signal_strength", self.rssi_var),
+            ("s_value", self.smeter_var),
+            ("snr", self.snr_var),
+            ("battery", self.batt_var),
         ]):
-            ttk.Label(status, text=label, font=("", 8, "bold")).grid(
+            ttk.Label(status, text=self._t(label), font=("", 8, "bold")).grid(
                 row=0, column=col, sticky="w", padx=8, pady=(6, 0))
             ttk.Label(status, textvariable=var, font=("", 12, "bold")).grid(
                 row=1, column=col, sticky="w", padx=8, pady=(0, 6))
 
         # Steuerung
-        ctrl = ttk.LabelFrame(outer, text="Steuerung")
+        ctrl = ttk.LabelFrame(outer, text=self._t("controls"))
         ctrl.pack(fill=tk.X, **pad)
 
-        ttk.Label(ctrl, text="Frequenz:").grid(row=0, column=0, sticky="w", padx=4)
+        ttk.Label(ctrl, text=self._t("frequency")).grid(row=0, column=0, sticky="w", padx=4)
         self.freq_entry_var = tk.StringVar()
         ttk.Entry(ctrl, textvariable=self.freq_entry_var, width=14).grid(
             row=0, column=1, padx=2)
@@ -180,7 +186,7 @@ class RemoteApp:
         unit_box = ttk.Combobox(ctrl, textvariable=self.freq_unit_var,
                                 values=["kHz", "MHz"], width=5, state="readonly")
         unit_box.grid(row=0, column=2, padx=2)
-        ttk.Button(ctrl, text="Setzen", command=self.set_frequency).grid(
+        ttk.Button(ctrl, text=self._t("set"), command=self.set_frequency).grid(
             row=0, column=3, padx=4)
 
         self.volume_var = tk.IntVar(value=0)
@@ -191,20 +197,20 @@ class RemoteApp:
         self.volume_scale.bind("<ButtonRelease-1>", lambda _e: self._volume_drag(False))
 
         rows = [
-            ("Frequenz", None, None),
-            ("Schrittweite", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
-            ("Lautstärke", None, None),
-            ("Band", protocol.CMD_BAND_UP, protocol.CMD_BAND_DOWN),
-            ("Modus", protocol.CMD_MODE_UP, protocol.CMD_MODE_DOWN),
-            ("Bandbreite", protocol.CMD_BANDWIDTH_UP, protocol.CMD_BANDWIDTH_DOWN),
-            ("AGC/Attn", protocol.CMD_AGC_UP, protocol.CMD_AGC_DOWN),
+            ("frequency", None, None),
+            ("step_size", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
+            ("volume", None, None),
+            ("band", protocol.CMD_BAND_UP, protocol.CMD_BAND_DOWN),
+            ("mode", protocol.CMD_MODE_UP, protocol.CMD_MODE_DOWN),
+            ("bandwidth", protocol.CMD_BANDWIDTH_UP, protocol.CMD_BANDWIDTH_DOWN),
+            ("agc_attn", protocol.CMD_AGC_UP, protocol.CMD_AGC_DOWN),
         ]
         for row, (label, up, down) in enumerate(rows, start=1):
-            if label == "Frequenz":
+            if label == "frequency":
                 down_cmd = lambda _l=None: self.tune(-1)
                 up_cmd = lambda _l=None: self.tune(+1)
-            elif label == "Lautstärke":
-                ttk.Label(ctrl, text=label, width=12).grid(
+            elif label == "volume":
+                ttk.Label(ctrl, text=self._t(label), width=12).grid(
                     row=row, column=0, sticky="w", padx=4)
                 self.volume_scale.grid(row=row, column=1, columnspan=3,
                                        sticky="we", padx=2, pady=6)
@@ -212,7 +218,7 @@ class RemoteApp:
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
                 up_cmd = (lambda c=up: lambda: self.send(c))()
-            ttk.Label(ctrl, text=label, width=12).grid(
+            ttk.Label(ctrl, text=self._t(label), width=12).grid(
                 row=row, column=0, sticky="w", padx=4)
             ttk.Button(ctrl, text="◀", width=3,
                        command=down_cmd).grid(row=row, column=1, sticky="w", padx=2, pady=2)
@@ -228,8 +234,9 @@ class RemoteApp:
         meter = ttk.Frame(ctrl)
         meter.grid(row=1, column=4, rowspan=len(rows), sticky="nsew",
                    padx=(16, 4), pady=2)
-        self.smeter_metric_var = tk.StringVar(value="Signalstärke")
-        for i, m in enumerate(("Signalstärke", "S-Wert", "SNR")):
+        self.smeter_metric_var = tk.StringVar(value=self._t("metric_rssi"))
+        for i, key in enumerate(("metric_rssi", "metric_s", "metric_snr")):
+            m = self._t(key)
             ttk.Radiobutton(meter, text=m, value=m,
                             variable=self.smeter_metric_var,
                             command=self._smeter_redraw).grid(
@@ -242,37 +249,35 @@ class RemoteApp:
         ctrl.columnconfigure(4, weight=1)
 
         # Speicher
-        mem = ttk.LabelFrame(outer, text="Speicherplätze")
+        mem = ttk.LabelFrame(outer, text=self._t("memories"))
         mem.pack(fill=tk.X, **pad)
-        ttk.Button(mem, text="Anzeigen ($)",
-                   command=self.show_memories).grid(row=0, column=0, padx=4, pady=2)
-        ttk.Label(mem, text="Slot:").grid(row=0, column=1, padx=4)
+        ttk.Label(mem, text=self._t("slot")).grid(row=0, column=0, padx=4)
         self.slot_var = tk.StringVar(value="1")
         slot_spin = ttk.Spinbox(mem, from_=1, to=32, textvariable=self.slot_var, width=4)
-        slot_spin.grid(row=0, column=2)
-        ttk.Button(mem, text="Aktuellen Sender speichern (#)",
-                   command=self.save_memory).grid(row=0, column=3, padx=4)
-        ttk.Button(mem, text="Slot löschen",
-                   command=self.clear_memory).grid(row=0, column=4, padx=4)
+        slot_spin.grid(row=0, column=1)
+        ttk.Button(mem, text=self._t("save_current"),
+                   command=self.save_memory).grid(row=0, column=2, padx=4)
+        ttk.Button(mem, text=self._t("clear_slot"),
+                   command=self.clear_memory).grid(row=0, column=3, padx=4)
         self.memory_tree = ttk.Treeview(mem, columns=("Slot", "Band", "Frequenz", "Modus"),
                                         show="headings", height=4)
         for col_name, width in [("Slot", 50), ("Band", 80), ("Frequenz", 140), ("Modus", 60)]:
             self.memory_tree.heading(col_name, text=col_name)
             self.memory_tree.column(col_name, width=width)
-        self.memory_tree.grid(row=1, column=0, columnspan=5, sticky="we", padx=4, pady=4)
+        self.memory_tree.grid(row=1, column=0, columnspan=4, sticky="we", padx=4, pady=4)
         mem.columnconfigure(0, weight=1)
 
         # Spektrum (Sweep)
-        sweep = ttk.LabelFrame(outer, text="Spektrum")
+        sweep = ttk.LabelFrame(outer, text=self._t("spectrum"))
         sweep.pack(fill=tk.X, **pad)
         self.sweep_points_var = tk.StringVar(value="60")
-        ttk.Label(sweep, text="Messpunkte:").grid(row=0, column=0, padx=4, pady=2)
+        ttk.Label(sweep, text=self._t("points")).grid(row=0, column=0, padx=4, pady=2)
         ttk.Spinbox(sweep, from_=10, to=500, increment=10,
                     textvariable=self.sweep_points_var, width=6).grid(row=0, column=1)
-        self.sweep_start_button = ttk.Button(sweep, text="Sweep starten",
+        self.sweep_start_button = ttk.Button(sweep, text=self._t("sweep_start"),
                                              command=self.sweep_start)
         self.sweep_start_button.grid(row=0, column=2, padx=6)
-        self.sweep_stop_button = ttk.Button(sweep, text="Abbrechen",
+        self.sweep_stop_button = ttk.Button(sweep, text=self._t("sweep_stop"),
                                             command=self.sweep_stop, state=tk.DISABLED)
         self.sweep_stop_button.grid(row=0, column=3, padx=4)
         self.sweep_progress_var = tk.StringVar(value="")
@@ -291,21 +296,35 @@ class RemoteApp:
         self._sweep_freq_range: tuple[int, int] | None = None
 
         # Screenshot
-        shot = ttk.LabelFrame(outer, text="Display")
+        shot = ttk.LabelFrame(outer, text=self._t("display"))
         shot.pack(fill=tk.X, **pad)
-        ttk.Button(shot, text="Screenshot (C)",
+        ttk.Button(shot, text=self._t("screenshot"),
                    command=self.take_screenshot).grid(row=0, column=0, padx=4, pady=2)
-        ttk.Button(shot, text="Speichern…",
+        ttk.Button(shot, text=self._t("save_as"),
                    command=self.save_screenshot).grid(row=0, column=1, padx=4)
-        self.shot_label = ttk.Label(shot, text="Kein Screenshot")
+        self.shot_label = ttk.Label(shot, text=self._t("no_screenshot"))
         self.shot_label.grid(row=0, column=2, padx=8)
 
-        # Log (per Menue Ansicht ein-/ausblendbar; Programmstart: aus)
-        self.logbox = ttk.LabelFrame(outer, text="Log")
+        # Log (per Menue Ansicht ein-/ausblendbar; Programmstart: aus):
+        # Tabellenansicht mit Spaltenueberschriften und Rollbalken
+        self.logbox = ttk.LabelFrame(outer, text=self._t("log"))
         self._log_visible = False
-        self.log_text = tk.Text(self.logbox, height=6, state=tk.DISABLED,
-                                font=("Courier", 9))
-        self.log_text.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        columns = ("time", "source", "message")
+        self.log_tree = ttk.Treeview(self.logbox, columns=columns,
+                                     show="headings", height=8)
+        for col, text, width in (
+                ("time", self._t("col_time"), 70),
+                ("source", self._t("col_source"), 80),
+                ("message", self._t("col_message"), 520)):
+            self.log_tree.heading(col, text=text)
+            self.log_tree.column(col, width=width, stretch=(col == "message"))
+        self.log_tree.tag_configure("raw", foreground="#b50")
+        log_scroll = ttk.Scrollbar(self.logbox, orient=tk.VERTICAL,
+                                   command=self.log_tree.yview)
+        self.log_tree.configure(yscrollcommand=log_scroll.set)
+        log_scroll.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 4), pady=4)
+        self.log_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
+                           padx=(4, 0), pady=4)
 
         self.root.bind("<Return>", lambda _e: self.set_frequency())
 
@@ -314,13 +333,51 @@ class RemoteApp:
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
         view_menu = tk.Menu(menubar, tearoff=0)
-        view_menu.add_command(label="Log anzeigen", command=self.toggle_log)
-        menubar.add_cascade(label="Ansicht", menu=view_menu)
+        view_menu.add_command(label=self._t("show_log"), command=self.toggle_log)
+        # Sprache: Radiobuttons je verfuegbarer Sprache; fehlende
+        # Schluessel fallen im Translator auf Deutsch zurueck
+        lang_menu = tk.Menu(view_menu, tearoff=0)
+        current_lang = i18n.current() or "Deutsch"
+        for name in i18n.available():
+            lang_menu.add_radiobutton(
+                label=name, value=name, variable=self._lang_var,
+                command=lambda n=name: self.switch_language(n))
+        view_menu.add_cascade(label=self._t("menu_language"), menu=lang_menu)
+        menubar.add_cascade(label=self._t("menu_view"), menu=view_menu)
         help_menu = tk.Menu(menubar, tearoff=0)
-        help_menu.add_command(label="Website", command=self.open_website)
-        help_menu.add_command(label="Über", command=self.show_about)
-        menubar.add_cascade(label="Hilfe", menu=help_menu)
+        help_menu.add_command(label=self._t("menu_website"), command=self.open_website)
+        help_menu.add_command(label=self._t("menu_about"), command=self.show_about)
+        menubar.add_cascade(label=self._t("menu_help"), menu=help_menu)
         self._view_menu = view_menu
+
+    def switch_language(self, name: str):
+        """Sprache umschalten: statische Texte der Fenster aktualisieren.
+        Dynamische Werte (Status, Speicherliste, Log) uebernehmen die neue
+        Sprache mit dem naechsten Update von selbst.
+        """
+        i18n.set_language(name)
+        self.root.title(self._t("app_title"))
+        self._apply_language()
+
+    def _apply_language(self):
+        """Statische Widget-Texte auf die aktive Sprache umstellen."""
+        t = self._t
+        self.connect_button.config(
+            text=t("disconnect") if self.client.is_connected() else t("connect"))
+        self.state_label.config(
+            text=t("connected") if self.client.is_connected()
+            else t("disconnected"))
+        # Log-Menueetikett und Spaltenueberschriften
+        self._view_menu.entryconfigure(
+            0, label=t("hide_log" if self._log_visible else "show_log"))
+        for col, key in (("time", "col_time"),
+                         ("source", "col_source"),
+                         ("message", "col_message")):
+            self.log_tree.heading(col, text=t(key))
+        self.logbox.config(text=t("log"))
+        self.shot_label.config(
+            image="", text=t("no_screenshot")
+            if getattr(self, "_shot_photo", None) is None else "")
 
     def toggle_log(self):
         """Log-Anzeige ein-/ausblenden (Startzustand: ausgeblendet)."""
@@ -331,8 +388,21 @@ class RemoteApp:
         else:
             self.logbox.pack_forget()
         self._view_menu.entryconfigure(
-            0, label="Log ausblenden" if self._log_visible
-            else "Log anzeigen")
+            0, label=self._t("hide_log" if self._log_visible
+                             else "show_log"))
+
+    def _log_insert(self, source: str, message: str):
+        """Zeile in die Logtabelle einfuegen und auf 400 Zeilen begrenzen."""
+        import time as _time
+        stamp = _time.strftime("%H:%M:%S")
+        src = self._t("log_source_app" if source == "app" else "log_source_radio")
+        tags = ("raw",) if self._log_line_is_raw(message) else ()
+        self.log_tree.insert("", tk.END, values=(stamp, src, message),
+                             tags=tags)
+        children = self.log_tree.get_children()
+        if len(children) > 400:
+            self.log_tree.delete(*children[:len(children) - 400])
+        self.log_tree.see(tk.END)
 
     def open_website(self):
         import webbrowser
@@ -340,40 +410,42 @@ class RemoteApp:
 
     def show_about(self):
         messagebox.showinfo(
-            "Über",
-            f"ATS-Mini WLAN-Fernbedienung\nVersion {app_version()}\n\n"
-            f"Projektseite:\n{PROJECT_URL}")
+            self._t("menu_about"),
+            f"{self._t('app_title')}\n{self._t('menu_about_version')} {app_version()}\n\n"
+            f"{self._t('menu_about_project')}:\n{PROJECT_URL}")
 
     # ------------------------------------------------------ Aktionen am Radio
 
     def connect(self):
         host = self.host_var.get().strip()
         if not host:
-            messagebox.showerror("Fehler", "Bitte Host angeben")
+            messagebox.showerror(self._t("error"), self._t("err_no_host"))
             return
         try:
             port = int(self.port_var.get())
         except ValueError:
-            messagebox.showerror("Fehler", "Ungültiger Port")
+            messagebox.showerror(self._t("error"), self._t("err_invalid_port"))
             return
         try:
             self.client.connect(host, port)
         except OSError as exc:
-            messagebox.showerror("Verbindung fehlgeschlagen", str(exc))
+            messagebox.showerror(self._t("err_connect_failed"), str(exc))
             return
         self.set_state(True)
         self.send(protocol.CMD_TOGGLE_LOG)
         self._sweep_points_pending = True
-        self.log(f"Verbunden mit {host}:{port}, Monitor aktiviert")
+        self.show_memories()
+        self._schedule_memory_refresh()
+        self.log(self._t("connected_with", host=host, port=port))
 
     def disconnect(self):
         self.client.disconnect()
         self.set_state(False)
-        self.log("Getrennt")
+        self.log(self._t("disconnected_log"))
 
     def send(self, command: bytes):
         if not self.client.is_connected():
-            self.log("Nicht verbunden – Befehl ignoriert")
+            self.log(self._t("not_connected_cmd"))
             return
         self.client.send(command)
 
@@ -387,7 +459,7 @@ class RemoteApp:
         """
         status = self._last_status
         if status is None:
-            self.log("Kein Status – Frequenzschritt nicht möglich")
+            self.log(self._t("no_status_tune"))
             return
         hz = status.display_frequency_hz()
         step_hz = protocol.step_size_hz(status)
@@ -404,22 +476,22 @@ class RemoteApp:
         try:
             self.send(protocol.format_frequency_command(target, ssb))
         except ValueError:
-            self.log("Frequenz außerhalb des Bands – Schritt ignoriert")
+            self.log(self._t("freq_out_of_band_step"))
 
     # -------------------------------------------------- Spektrum (Sweep)
 
     def sweep_start(self):
         if not self.client.is_connected():
-            self.log("Nicht verbunden – Sweep nicht möglich")
+            self.log(self._t("not_connected_sweep"))
             return
         status = self._last_status
         if status is None:
-            self.log("Kein Status – Sweep nicht möglich")
+            self.log(self._t("no_status_sweep"))
             return
         rng = protocol.sweep_points_for_band(
             status.band, status.mode, status.display_frequency_hz())
         if rng is None:
-            self.log(f"Band '{status.band}' unbekannt – Sweep nicht möglich")
+            self.log(self._t("band_unknown_sweep", band=status.band))
             return
         try:
             points = int(self.sweep_points_var.get())
@@ -444,7 +516,7 @@ class RemoteApp:
             int(lo_khz) * 1000, int(hi_khz) * 1000, points, sweep_mode)
         step = protocol.step_hz(step_text)
         if len(self._sweep_freqs) < 2:
-            self.log("Band zu schmal für diese Schrittweite – Sweep nicht möglich")
+            self.log(self._t("band_too_narrow"))
             return
         self._sweep_index = 0
         self._sweep_data = []
@@ -490,11 +562,10 @@ class RemoteApp:
         self.sweep_start_button.config(state=tk.DISABLED)
         self.sweep_stop_button.config(state=tk.NORMAL)
         if sweep_mode != status.mode:
-            self.log(f"Modus für Sweep: {sweep_mode} "
-                     f"(vorher {status.mode}, wird zurückgestellt)")
-        self.log(f"Sweep über {status.band}: {lo_khz}–{hi_khz} kHz, "
-                 f"{len(self._sweep_freqs)} Punkte, Schrittweite {step_text}, "
-                 f"Bandbreite {bw_target}")
+            self.log(self._t("log_sweep_mode", mode=sweep_mode, old=status.mode))
+        self.log(self._t("log_sweep_over", band=status.band, lo=lo_khz, hi=hi_khz,
+                         points=len(self._sweep_freqs), step=step_text,
+                         bw=bw_target))
         # Achsengeruest einmalig zeichnen; die Messpunkte werden danach
         # inkrementell hinzugefuegt (kein Vollredraw pro Punkt)
         self._sweep_axis_max = self._SWEEP_AXIS_MIN
@@ -508,13 +579,13 @@ class RemoteApp:
         if not self._sweep_active:
             return
         self._sweep_active = False
-        self._sweep_finish("Abgebrochen")
+        self._sweep_finish(self._t("sweep_cancelled"))
 
     def _sweep_next(self):
         if not self._sweep_active:
             return
         if self._sweep_index >= len(self._sweep_freqs):
-            self._sweep_finish("Fertig")
+            self._sweep_finish(self._t("sweep_done"))
             return
         hz = self._sweep_freqs[self._sweep_index]
         # waehrend des Sweeps gilt der Sweep-Modus, nicht der Originalmodus
@@ -564,14 +635,14 @@ class RemoteApp:
             return
         if self._sweep_phase_setup is not None:
             name, _cmd, restore, target = self._sweep_phase_setup
-            self.log(f"{name} nicht bestätigt ({target}) – Sweep trotzdem fortgesetzt")
+            self.log(self._t("log_sweep_setup_conflict", name=name, target=target))
             self._sweep_phase_setup = None
             self._sweep_advance_setup()
             return
         hz = self._sweep_freqs[self._sweep_index] \
             if self._sweep_index < len(self._sweep_freqs) else None
-        self.log(f"Keine Bestätigung für {protocol.fmt_num(hz / 1000, 1)} kHz "
-                 "– Punkt übersprungen")
+        self.log(self._t("log_point_skipped",
+                             freq=protocol.fmt_num(hz / 1000, 1)))
         self._sweep_index += 1
         self.sweep_progress_var.set(
             f"{self._sweep_index}/{len(self._sweep_freqs)}")
@@ -609,7 +680,7 @@ class RemoteApp:
         self.sweep_progress_var.set(f"{done}/{total}")
         self._sweep_draw_incr(expected_hz)
         if done >= total:
-            self._sweep_finish("Fertig")
+            self._sweep_finish(self._t("sweep_done"))
         else:
             # Kein additional Delay: der nächste F-Befehl geht sofort raus,
             # der 500-ms-Monitor-Teakt liefert die zugehörige Messung.
@@ -665,7 +736,8 @@ class RemoteApp:
         self._sweep_marker_hz = None
         self.sweep_start_button.config(state=tk.NORMAL)
         self.sweep_stop_button.config(state=tk.DISABLED)
-        self.sweep_progress_var.set(self._sweep_message or "Fertig")
+        self.sweep_progress_var.set(
+            self._sweep_message or self._t("sweep_done"))
         restore = self._sweep_restore_freq
         if restore is not None:
             status = self._last_status
@@ -676,8 +748,8 @@ class RemoteApp:
                 self.send(protocol.format_frequency_command(restore, ssb))
             except ValueError:
                 pass
-        self.log(f"Sweep {self._sweep_message}: "
-                 f"{len(self._sweep_data or [])} Punkte")
+        self.log(self._t("log_sweep_summary", message=self._sweep_message,
+                         points=len(self._sweep_data or [])))
         # Abschlusszeichnung: fuellt die letzten Luecken (am rechten Rand
         # fehlt der rechte Nachbar) und setzt die Frequenzmarke neu
         self._sweep_draw()
@@ -902,9 +974,10 @@ class RemoteApp:
         ssb = status.mode in ("LSB", "USB") if status else False
         try:
             self.send(protocol.format_frequency_command(hz, ssb))
-            self.log(f"Abgestimmt auf {protocol.fmt_num(hz / 1000, 1)} kHz")
+            self.log(self._t("log_tuned",
+                             freq=protocol.fmt_num(hz / 1000, 1)))
         except ValueError:
-            self.log("Frequenz außerhalb des Bands")
+            self.log(self._t("freq_out_of_band"))
 
     _SMETER_W = 260
     _SMETER_H = 122
@@ -922,7 +995,9 @@ class RemoteApp:
     def _smeter_value(self, status) -> tuple[float, str, list[str]]:
         """Metrik-abhaengiger Anzeigewert: (0..1, Text, Tick-Labels)."""
         metric = self.smeter_metric_var.get()
-        if metric == "S-Wert":
+        s_label = self._t("metric_s")
+        snr_label = self._t("metric_snr")
+        if metric == s_label:
             # Skala S1..S9 mit Bereich darueber (+10..+60 dB ueber S9);
             # Zeigerwert und Ticks verwenden dieselbe Positionsskala:
             # 15 Schritte = S1..S9 (9) + 10..60 dB (6)
@@ -943,7 +1018,7 @@ class RemoteApp:
                         pass
             pos = max(0, min(pos, 14))
             return pos / 14, s, ticks
-        if metric == "SNR":
+        if metric == snr_label:
             # SNR 0..60 dB -> 0..1; Ticks alle 15 dB
             v = max(0.0, min(status.snr, 60.0)) / 60.0
             text = f"{status.snr:.0f} dB"
@@ -1022,16 +1097,16 @@ class RemoteApp:
     def _set_row_values(self, status: protocol.ReceiverStatus):
         """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
         vars_ = self._row_value_vars
-        if "Frequenz" in vars_:
+        if "frequency" in vars_:
             hz = status.display_frequency_hz()
             if status.mode.upper() == "FM":
-                vars_["Frequenz"].set(
+                vars_["frequency"].set(
                     f"{protocol.fmt_num(hz / 1e6, 2)} MHz")
             else:
-                vars_["Frequenz"].set(
+                vars_["frequency"].set(
                     f"{protocol.fmt_num(hz / 1e3, 3)} kHz")
-        if "Band" in vars_:
-            vars_["Band"].set(status.band)
+        if "band" in vars_:
+            vars_["band"].set(status.band)
         # Nach Verbindung und Bandwechsel sinnvolle Messpunktzahl waehlen.
         # Die Empfehlung haengt nur vom Band ab (dessen Natur laut Bandtabelle),
         # nicht vom eingestellten Modus; ein Moduswechsel aendert sie nicht.
@@ -1042,15 +1117,15 @@ class RemoteApp:
                 status.band, status.mode, status.display_frequency_hz())
             self.sweep_points_var.set(str(points))
             self._sweep_points_pending = False
-        if "Modus" in vars_:
-            vars_["Modus"].set(status.mode)
-        if "Schrittweite" in vars_:
-            vars_["Schrittweite"].set(status.step)
-        if "Bandbreite" in vars_:
-            vars_["Bandbreite"].set(status.bandwidth)
-        if "AGC/Attn" in vars_:
+        if "mode" in vars_:
+            vars_["mode"].set(status.mode)
+        if "step_size" in vars_:
+            vars_["step_size"].set(status.step)
+        if "bandwidth" in vars_:
+            vars_["bandwidth"].set(status.bandwidth)
+        if "agc_attn" in vars_:
             # Firmware: 0 = AGC ein, >0 = Attenuation (Wert = Index - 1)
-            vars_["AGC/Attn"].set("AGC ein" if status.agc == 0
+            vars_["agc_attn"].set(self._t("agc_on") if status.agc == 0
                                   else f"ATTN {status.agc - 1}")
 
     def set_frequency(self):
@@ -1060,7 +1135,7 @@ class RemoteApp:
         try:
             value = protocol.parse_float(raw)
         except ValueError:
-            messagebox.showerror("Fehler", "Ungültige Frequenzeingabe")
+            messagebox.showerror(self._t("error"), self._t("err_invalid_frequency"))
             return
         unit = self.freq_unit_var.get()
         ssb = self._current_mode in ("LSB", "USB")
@@ -1097,15 +1172,31 @@ class RemoteApp:
         self.send(protocol.CMD_SHOW_MEMORIES)
         self.root.after(800, self._flush_memories)
 
+    def _schedule_memory_refresh(self):
+        """Speicherliste selten auffrischen (alle 60 s), solange verbunden."""
+        if self._memory_refresh_id is not None:
+            self.root.after_cancel(self._memory_refresh_id)
+        if not self.client.is_connected():
+            self._memory_refresh_id = None
+            return
+        self._memory_refresh_id = self.root.after(
+            60_000, self._memory_refresh_tick)
+
+    def _memory_refresh_tick(self):
+        self._memory_refresh_id = None
+        if self.client.is_connected():
+            self.show_memories()
+            self._schedule_memory_refresh()
+
     def save_memory(self):
         status = self._last_status
         if status is None:
-            messagebox.showerror("Fehler", "Kein Status vom Empfänger")
+            messagebox.showerror(self._t("error"), self._t("err_no_status"))
             return
         try:
             slot = int(self.slot_var.get())
         except ValueError:
-            messagebox.showerror("Fehler", "Ungültiger Slot")
+            messagebox.showerror(self._t("error"), self._t("err_invalid_slot"))
             return
         band = status.band
         mode = status.mode
@@ -1120,7 +1211,7 @@ class RemoteApp:
         try:
             slot = int(self.slot_var.get())
         except ValueError:
-            messagebox.showerror("Fehler", "Ungültiger Slot")
+            messagebox.showerror(self._t("error"), self._t("err_invalid_slot"))
             return
         status = self._last_status
         band = status.band if status else "MW"
@@ -1141,15 +1232,15 @@ class RemoteApp:
 
     def take_screenshot(self):
         if not self.client.is_connected():
-            self.log("Nicht verbunden – Screenshot nicht möglich")
+            self.log(self._t("not_connected_shot"))
             return
         self.shot_label.config(image="")
-        self.shot_label.config(text="Empfange… 0 %")
+        self.shot_label.config(text=self._t("receiving", percent=0))
         self.client.request_screenshot()
 
     def save_screenshot(self):
         if self._screenshot is None:
-            messagebox.showerror("Fehler", "Kein Screenshot vorhanden")
+            messagebox.showerror(self._t("error"), self._t("err_no_screenshot"))
             return
         filename = filedialog.asksaveasfilename(
             defaultextension=".bmp", filetypes=[("BMP-Bild", "*.bmp")])
@@ -1157,7 +1248,7 @@ class RemoteApp:
             return
         with open(filename, "wb") as fh:
             fh.write(self._screenshot.to_bmp())
-        self.log(f"Screenshot gespeichert: {filename}")
+        self.log(self._t("screenshot_saved", filename=filename))
 
     # ----------------------------------------------------------- Rückrufe
 
@@ -1173,12 +1264,18 @@ class RemoteApp:
     def on_memory(self, mem: tuple[int, str, int, str]):
         self._pending_memory.append(mem)
 
+    def _on_radio_line(self, line: str):
+        self.log(line, source="radio")
+
     def on_disconnect(self, reason: str):
         self.root.after(0, lambda: self._handle_disconnect(reason))
 
     def _handle_disconnect(self, reason: str):
         self.set_state(False)
-        self.log(f"Verbindung getrennt: {reason}")
+        if self._memory_refresh_id is not None:
+            self.root.after_cancel(self._memory_refresh_id)
+            self._memory_refresh_id = None
+        self.log(self._t("connection_lost", reason=reason))
 
     def on_screenshot(self, shot: protocol.Screenshot):
         self._pending_screenshot = shot
@@ -1195,23 +1292,38 @@ class RemoteApp:
 
     def set_state(self, connected: bool):
         if connected:
-            self.connect_button.config(text="Trennen", command=self.disconnect)
-            self.state_label.config(text="Verbunden", foreground="#070")
+            self.connect_button.config(text=self._t("disconnect"), command=self.disconnect)
+            self.state_label.config(text=self._t("connected"), foreground="#070")
         else:
-            self.connect_button.config(text="Verbinden", command=self.connect)
-            self.state_label.config(text="Getrennt", foreground="#a00")
+            self.connect_button.config(text=self._t("connect"), command=self.connect)
+            self.state_label.config(text=self._t("disconnected"), foreground="#a00")
 
-    def log(self, message: str):
-        self._pending_log.append(message)
+    def log(self, message: str, source: str = "app"):
+        """Meldung im Log vormerken; source: 'app' oder 'radio'."""
+        self._pending_log.append((source, message))
+
+    def _log_line_is_raw(self, message: str) -> bool:
+        """True, wenn eine Radio-Zeile keinem erwarteten Format entspricht.
+
+        Erwartete Formate (Firmware Remote.cpp): leere Zeilen als
+        Bestaetigung, 'Error: ...'-Meldungen, '#..'-Speicherzeilen und
+        CSV-Statuszeilen. Alles andere (z. B. Hex-Daten) wird als
+        unformatierte Rohzeile farbig hervorgehoben.
+        """
+        text = message.strip()
+        if not text:
+            return False
+        if text.startswith("Error:"):
+            return False
+        if protocol.parse_status(text) is not None:
+            return False
+        if protocol.parse_memory_line(text) is not None:
+            return False
+        return True
 
     def _poll_main_thread(self):
-        for message in self._pending_log:
-            self.log_text.config(state=tk.NORMAL)
-            self.log_text.insert(tk.END, message + "\n")
-            self.log_text.see(tk.END)
-            if float(self.log_text.index("end-1c").split(".")[0]) > 400:
-                self.log_text.delete("1.0", "200.0")
-            self.log_text.config(state=tk.DISABLED)
+        for source, message in self._pending_log:
+            self._log_insert(source, message)
         self._pending_log = []
 
         status = getattr(self, "_pending_status", None)
@@ -1265,7 +1377,7 @@ class RemoteApp:
             received, total = progress
             if total > 0:
                 percent = min(99, received * 100 // total)
-                self.shot_label.config(text=f"Empfange… {percent} %")
+                self.shot_label.config(text=self._t("receiving", percent=percent))
 
         self.root.after(50, self._poll_main_thread)
 

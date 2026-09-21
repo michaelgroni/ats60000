@@ -24,6 +24,9 @@ class FakeWidget:
     def grid(self, **kw):
         self._register_manager("grid")
 
+    def set(self, *a, **kw):
+        pass
+
     def _register_manager(self, manager):
         parent = self.parent
         while parent is not None and not hasattr(parent, "_managers"):
@@ -84,6 +87,9 @@ def make_tkinter_mock():
     mod.IntVar = tk_var
     mod.Text = FakeWidget
     mod.END = "end"
+    mod.VERTICAL = "vertical"
+    mod.LEFT = "left"
+    mod.RIGHT = "right"
     class FakeMenu(FakeWidget):
         def __init__(self, parent, *args, **kwargs):
             super().__init__(parent, *args, **kwargs)
@@ -92,6 +98,9 @@ def make_tkinter_mock():
             self.config_calls = []
 
         def add_command(self, **kw):
+            self.entries.append(kw)
+
+        def add_radiobutton(self, **kw):
             self.entries.append(kw)
 
         def add_cascade(self, **kw):
@@ -107,10 +116,40 @@ def make_tkinter_mock():
     mod.PhotoImage = lambda **kw: None
 
     ttk = types.ModuleType("tkinter.ttk")
+    class FakeTreeview(FakeWidget):
+        def heading(self, col, text=None):
+            pass
+
+        def column(self, *a, **kw):
+            pass
+
+        def tag_configure(self, *a, **kw):
+            pass
+
+        def insert(self, parent, end, values=(), tags=()):
+            pass
+
+        def get_children(self):
+            return []
+
+        def delete(self, *a, **kw):
+            pass
+
+        def see(self, *a, **kw):
+            pass
+
+        def yview(self, *a, **kw):
+            pass
+
+        def configure(self, *a, **kw):
+            pass
+
     setattr(ttk, "Frame", FakeFrame)
     setattr(ttk, "LabelFrame", FakeFrame)
+    setattr(ttk, "Treeview", FakeTreeview)
     for name in ["Label", "Button", "Entry",
-                 "Combobox", "Spinbox", "Scale", "Treeview", "Radiobutton"]:
+                 "Combobox", "Spinbox", "Scale", "Radiobutton",
+                 "Scrollbar"]:
         setattr(ttk, name, FakeWidget)
     mod.ttk = ttk
 
@@ -149,6 +188,7 @@ class GuiSmokeTest(unittest.TestCase):
         application._row_value_vars = {}
         application._pending_memory = []
         application._screenshot = None
+        application._lang_var = FakeVar()
         application._build_ui()
         # Kein Exception -> Aufbau ok
         self.assertTrue(True)
@@ -167,6 +207,7 @@ class GuiSmokeTest(unittest.TestCase):
         application._row_value_vars = {}
         application._pending_memory = []
         application._screenshot = None
+        application._lang_var = FakeVar()
         application._build_ui()
 
         # Menueleiste: Ansicht und Hilfe mit den besprochenen Eintraegen
@@ -264,22 +305,40 @@ class FakeVar:
         return self.value
 
 
-class FakeLogText:
-    """Stub fuer das Log-Textfeld (config/insert/see/index/delete)."""
+class FakeLogTree:
+    """Stub fuer die Logtabelle (heading/column/tag_configure/insert/...)."""
 
-    def config(self, **kw):
+    def __init__(self):
+        self.rows = []
+        self.headings = {}
+
+    def heading(self, col, text=None):
+        if text is not None:
+            self.headings[col] = text
+        return self.headings.get(col)
+
+    def column(self, *a, **kw):
         pass
 
-    def insert(self, *a, **kw):
+    def tag_configure(self, *a, **kw):
+        pass
+
+    def insert(self, parent, end, values=(), tags=()):
+        self.rows.append((values, tags))
+
+    def get_children(self):
+        return list(range(len(self.rows)))
+
+    def delete(self, *a, **kw):
         pass
 
     def see(self, *a, **kw):
         pass
 
-    def index(self, *a, **kw):
-        return "1.0"
+    def yview(self, *a, **kw):
+        pass
 
-    def delete(self, *a, **kw):
+    def configure(self, *a, **kw):
         pass
 
 
@@ -312,6 +371,8 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._sweep_ema = {}
         application._sweep_prev = {}
         application._last_status = None
+        application._memory_refresh_id = None
+        application._lang_var = FakeVar()
         application._sweep_data = [(3_500_000, 10), (3_600_000, 20)]
         application._sweep_freqs = [3_500_000, 3_600_000]
         application._sweep_freq_range = (3_500_000, 4_000_000)
@@ -332,8 +393,8 @@ class SpectrumMarkerTest(unittest.TestCase):
         application.batt_var = FakeVar()
         application.sweep_points_var = FakeVar()
         application.sweep_progress_var = FakeVar()
-        application.log_text = FakeLogText()
-        application.log = lambda msg: None
+        application.log_tree = FakeLogTree()
+        application.log = lambda msg, source="app": None
         application.root.after = lambda delay, fn=None: None
         application.root.after_cancel = lambda tid: None
         return application
@@ -663,6 +724,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._row_value_vars = {}
         application._pending_memory = []
         application._screenshot = None
+        application._lang_var = FakeVar()
         application._build_ui()
         # Canvas-Hintergrund ist ab Programmstart die Zifferblattfarbe
         self.assertEqual(application.smeter_canvas.kwargs.get("bg"),
