@@ -1080,8 +1080,8 @@ class RemoteApp:
 
     _SMETER_W = 260
     _SMETER_H = 122
-    _SMETER_BG = "#f4eedd"     # Hintergrund = Zifferblattfarbe, ab Start hell
-    _SMETER_FACE = "#f4eedd"   # helles Zifferblatt
+    _SMETER_BG = "#ffffff"     # Hintergrund = Zifferblattfarbe, ab Start hell
+    _SMETER_FACE = "#ffffff"   # weisses Zifferblatt
     _SMETER_TXT = "#111"
     _SMETER_TICK = "#000"
     _SMETER_RED = "#c00"       # roter Bereich am Skalenende

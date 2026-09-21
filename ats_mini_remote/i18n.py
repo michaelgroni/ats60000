@@ -37,7 +37,7 @@ DE = {
     "agc_attn": "AGC/Attn",
     "agc_on": "AGC ein",
     "squelch": "Rauschsperre",
-    "squelch_sens": "Empfindlichkeit",
+    "squelch_sens": "Rauschsperre",
     # S-Meter
     "metric_rssi": "Signalstärke",
     "metric_s": "S-Wert",
@@ -152,7 +152,7 @@ EN = {
     "agc_attn": "AGC/Attn",
     "agc_on": "AGC on",
     "squelch": "Squelch",
-    "squelch_sens": "Sensitivity",
+    "squelch_sens": "Squelch",
     "metric_rssi": "Signal strength",
     "metric_s": "S-value",
     "metric_snr": "SNR",
