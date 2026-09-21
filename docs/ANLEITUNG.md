@@ -7,8 +7,10 @@ Kabel und ohne Installation. Sie brauchen keine Computerkenntnisse.
 
 1. Öffnen Sie die Programmseite auf GitHub:
    [github.com/michaelgroni/ats60000/releases](https://github.com/michaelgroni/ats60000/releases)
-2. Laden Sie unter dem neuesten Release (z. B. **v0.2**) die Datei
-   **ATS-Mini-Remote-0.2.exe** herunter
+2. Laden Sie auf der Seite im Abschnitt **Latest** (neuestes Release)
+   die dort angebotene EXE-Datei herunter -- im Beispiel heißt sie
+   **ATS-Mini-Remote-0.2.exe**, bei neueren Versionen entsprechend
+   **ATS-Mini-Remote-<Versionsnummer>.exe**
    (z. B. in den Ordner *Downloads*).
 3. Fertig. Die Datei braucht nicht entpackt zu werden und es muss nichts
    installiert werden. Am besten heben Sie sie an einem festen Ort auf,

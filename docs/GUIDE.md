@@ -13,8 +13,10 @@ important buttons are: *Verbinden* (connect), *Trennen* (disconnect),
 
 1. Open the program page on GitHub:
    [github.com/michaelgroni/ats60000/releases](https://github.com/michaelgroni/ats60000/releases)
-2. Under the latest release (e.g. **v0.2**), download the file
-   **ATS-Mini-Remote-0.2.exe**
+2. On that page, in the **Latest** section (newest release), download
+   the EXE file offered there -- in the example it is called
+   **ATS-Mini-Remote-0.2.exe**, with newer versions correspondingly
+   **ATS-Mini-Remote-<version-number>.exe**
    (for example into your *Downloads* folder).
 3. That's it. The file does not need to be unzipped and nothing needs to
    be installed. Keep it in a permanent place, for example on your
