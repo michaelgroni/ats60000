@@ -811,6 +811,38 @@ class SpectrumMarkerTest(unittest.TestCase):
         texts = [t[1].get("text") for t in app.freq_display.texts]
         self.assertIn("kHz", texts)
 
+    def test_freq_display_long_frequency_fits_into_canvas(self):
+        app = self._make_app()
+        from ats_mini_remote import protocol
+        # 30000,000 kHz im KW-Band ist breiter als die 240-px-Canvas,
+        # wenn die Segmentgroesse nicht mitskaliert werden wuerde
+        app.freq_display.width = 240
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=30_000, mode="AM", band="SW"))
+        self.assertGreater(len(app.freq_display.polygons), 7)
+        canvas_w = app.freq_display.width
+        for args, _kw in app.freq_display.polygons:
+            xs = [p for point in args for p in point][0::2]
+            self.assertLessEqual(max(xs), canvas_w,
+                                 "Siebensegmentanzeige ragt ueber den Rand")
+        text_args = app.freq_display.texts[0][0]
+        self.assertLessEqual(text_args[0], canvas_w)
+        self.assertIn("kHz", [t[1].get("text") for t in app.freq_display.texts])
+
+    def test_freq_display_short_frequency_uses_full_size(self):
+        app = self._make_app()
+        from ats_mini_remote import protocol
+        # FM: kurze Anzeige "107,9" braucht keine Verkleinerung
+        app.freq_display.width = 240
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=10_790, mode="FM", band="VHF"))
+        widths = set()
+        for args, _kw in app.freq_display.polygons:
+            xs = [pt[0] for pt in args]
+            widths.add(max(xs) - min(xs))
+        self.assertIn(app._7SEG_W, widths)
+        self.assertIn("MHz", [t[1].get("text") for t in app.freq_display.texts])
+
     def test_battery_display_draws_symbol_and_voltage(self):
         app = self._make_app()
         from ats_mini_remote import protocol
