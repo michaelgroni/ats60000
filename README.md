@@ -20,10 +20,8 @@ keine Zusatzpakete nötig.
 
 ## Am Radio einstellen
 
-1. `Settings → Wi-Fi` → `AP Only`, `AP+Connect` oder `Connect`
-   (im AP-Modus heißt das Netz `ATS-Mini`, ohne Passwort).
-   Das Radio ist dann unter der IP-Adresse erreichbar, die kurzzeitig im Display erscheint.
-3. `Settings → TCP Port` → `Ad hoc`
+1. `Settings → Wi-Fi` → `AP Only`, `AP+Connect` oder `Connect` (Details siehe Anleitung zur Radio-Firmware)
+2. `Settings → TCP Port` → `Ad hoc`
 
 ## Anwendung starten
 
