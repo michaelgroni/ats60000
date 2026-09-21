@@ -1151,7 +1151,7 @@ class RemoteApp:
             canvas.create_text(lx, ly, text=ticks[i], anchor="c",
                                font=("", 8), fill=self._SMETER_TXT)
             if i < n:
-                for sub in (1/3, 2/3):
+                for sub in (1/2,):
                     a_sub = angle + arc / n * sub
                     xs_out, ys_out = polar(a_sub, r)
                     xs_in, ys_in = polar(a_sub, r - 6)
