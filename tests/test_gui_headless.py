@@ -325,6 +325,7 @@ class FakeLogTree:
 
     def insert(self, parent, end, values=(), tags=()):
         self.rows.append((values, tags))
+        return len(self.rows) - 1
 
     def get_children(self):
         return list(range(len(self.rows)))

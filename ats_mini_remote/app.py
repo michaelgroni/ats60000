@@ -397,12 +397,12 @@ class RemoteApp:
         stamp = _time.strftime("%H:%M:%S")
         src = self._t("log_source_app" if source == "app" else "log_source_radio")
         tags = ("raw",) if self._log_line_is_raw(message) else ()
-        self.log_tree.insert("", tk.END, values=(stamp, src, message),
-                             tags=tags)
+        item = self.log_tree.insert("", tk.END, values=(stamp, src, message),
+                                   tags=tags)
         children = self.log_tree.get_children()
         if len(children) > 400:
             self.log_tree.delete(*children[:len(children) - 400])
-        self.log_tree.see(tk.END)
+        self.log_tree.see(item)
 
     def open_website(self):
         import webbrowser
