@@ -188,22 +188,26 @@ class RemoteApp:
                                        bg=self._SMETER_FACE,
                                        highlightthickness=0)
         self.smeter_canvas.grid(row=0, column=0, sticky="w")
-        for i, (key, val) in enumerate((("metric_rssi", "rssi"),
-                                        ("metric_s", "s"),
-                                        ("metric_snr", "snr"))):
-            self._tr(tk.Radiobutton(meter, text=self._t(key), value=val,
-                                    variable=self.smeter_metric_var,
-                                    command=self._smeter_redraw,
-                                    bg="#ffffff",
-                                    activebackground="#ffffff"),
-                     key).grid(row=i, column=1, sticky="w",
-                                padx=(6, 0), pady=1)
+        metric_btns = tk.Frame(meter, bg="#ffffff")
+        metric_btns.grid(row=0, column=1, sticky="ns", padx=(6, 0))
+        for key, val in (("metric_rssi", "rssi"),
+                         ("metric_s", "s"),
+                         ("metric_snr", "snr")):
+            self._tr(tk.Radiobutton(metric_btns, text=self._t(key),
+                                   value=val,
+                                   variable=self.smeter_metric_var,
+                                   command=self._smeter_redraw,
+                                   bg="#ffffff",
+                                   activebackground="#ffffff"),
+                     key).pack(anchor="w", pady=1)
         status.columnconfigure(1, weight=1)
 
-        # Steuerung
-        ctrl = ttk.LabelFrame(outer, text=self._t("controls"))
+        # Steuerung und Speicherplaetze nebeneinander
+        ctrl_mem = ttk.Frame(outer)
+        ctrl_mem.pack(fill=tk.X, **pad)
+        ctrl = ttk.LabelFrame(ctrl_mem, text=self._t("controls"))
         self._tr(ctrl, "controls")
-        ctrl.pack(fill=tk.X, **pad)
+        ctrl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self._tr(ttk.Label(ctrl, text=self._t("frequency")),
                  "frequency").grid(row=0, column=0, sticky="w", padx=4)
@@ -281,9 +285,9 @@ class RemoteApp:
 
 
         # Speicher
-        mem = ttk.LabelFrame(ctrl, text=self._t("memories"))
+        mem = ttk.LabelFrame(ctrl_mem, text=self._t("memories"))
         self._tr(mem, "memories")
-        mem.grid(row=1, column=5, rowspan=len(rows), sticky="nw", padx=(12, 4), pady=2)
+        mem.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
         self._tr(ttk.Label(mem, text=self._t("slot")), "slot").grid(
             row=0, column=0, padx=4)
         self.slot_var = tk.StringVar(value="1")
@@ -307,7 +311,6 @@ class RemoteApp:
             self.memory_tree.column(col, width=width, anchor="w")
         self.memory_tree.grid(row=1, column=0, columnspan=4, sticky="we", padx=4, pady=4)
         mem.columnconfigure(0, weight=1)
-        ctrl.columnconfigure(5, weight=1)
 
         # Spektrum (Sweep)
         sweep = ttk.LabelFrame(outer, text=self._t("spectrum"))
@@ -1178,9 +1181,9 @@ class RemoteApp:
                         fill=self._7SEG_ON, outline="")
                 x += w + self._7SEG_GAP
             elif ch in ",.":
-                dx = x - self._7SEG_GAP
                 y1 = t + h
-                canvas.create_oval(dx + 1, y1 - 3, dx + 6, y1 + 2,
+                dx = x - self._7SEG_GAP // 2
+                canvas.create_oval(dx - 2, y1 - 3, dx + 3, y1 + 2,
                                    fill=self._7SEG_ON, outline="")
                 x += self._7SEG_GAP
         canvas.create_text(x + 4, t + h // 2, anchor="w", text=unit,
