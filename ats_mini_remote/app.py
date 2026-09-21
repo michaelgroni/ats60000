@@ -1737,6 +1737,12 @@ class RemoteApp:
         ppm = shot.to_ppm()
         self._shot_photo = tk.PhotoImage(data=ppm, format="PPM")
         self.shot_label.config(image=self._shot_photo, text="")
+        # Fenster von selbst so hoch machen, dass der Screenshot
+        # vollstaendig sichtbar ist (Hoehe des Inhalts inkl. Bild)
+        self.root.update_idletasks()
+        box = self._scroll.bbox("all")
+        if box:
+            self.root.geometry(f"{self.root.winfo_width()}x{box[3] + 12}")
 
     _pending_log: list[str] = []
     _pending_status: protocol.ReceiverStatus | None = None
