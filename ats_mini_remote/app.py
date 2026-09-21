@@ -1098,7 +1098,7 @@ class RemoteApp:
             return v, text, ["0", "15", "30", "45", "60"]
         # Signalstaerke: RSSI 0..127 dBuV -> 0..1; Ticks alle 20 dB
         v = max(0.0, min(status.rssi, 127.0)) / 127.0
-        return v, f"{status.rssi} dBµV", [str(t) for t in range(20, 128, 20)]
+        return v, f"{status.rssi} dBµV", [str(t) for t in range(10, 128, 10)]
 
     def _smeter_redraw(self):
         """S-Meter neu zeichnen: analoges Zeigerinstrument im klassischen

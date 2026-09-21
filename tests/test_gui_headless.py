@@ -571,8 +571,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertEqual(len(canvas.ovals), 1)   # Drehpunkt
         texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("64 dBµV", texts)
-        # Skala: RSSI-Ticks 20..120 vorhanden
-        for tick in ("20", "60", "120"):
+        # Skala: RSSI-Ticks 10..120 in 10er-Schritten vorhanden
+        for tick in ("10", "30", "50", "70", "90", "110",
+                     "20", "60", "120"):
             self.assertIn(tick, texts)
         # Zeigerwinkel: 64/127 der Halbkreisspanne, von links ueber oben
         (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
@@ -592,7 +593,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         r = app._SMETER_R
         # Tick-Labels liegen ausserhalb des Skalenradius
         for coords, kw in app.smeter_canvas.texts:
-            if kw.get("text") in ("20", "40", "60", "80", "100", "120"):
+            if kw.get("text") in ("10", "30", "50", "70", "90",
+                                  "110", "20", "40", "60", "80",
+                                  "100", "120"):
                 d = math.hypot(coords[0] - cx, coords[1] - cy)
                 self.assertGreaterEqual(d, r + 3)
 
