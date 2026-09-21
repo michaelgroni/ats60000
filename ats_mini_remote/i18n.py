@@ -13,7 +13,6 @@ from typing import Callable
 DE = {
     # Verbindung
     "app_title": "ATS-Miniradio V1 – WLAN-Fernbedienung",
-    "connection": "Verbindung",
     "host": "Host:",
     "port": "Port:",
     "connect": "Verbinden",
@@ -21,13 +20,11 @@ DE = {
     "connected": "Verbunden",
     "disconnected": "Getrennt",
     # Status
-    "receiver": "Empfänger",
     "frequency": "Frequenz",
     "band": "Band",
     "mode": "Modus",
     "snr": "SNR",
     # Steuerung
-    "controls": "Steuerung",
     "step_size": "Schrittweite",
     "volume": "Lautstärke",
     "bandwidth": "Bandbreite",
@@ -125,19 +122,16 @@ DE = {
 
 EN = {
     "app_title": "ATS-Mini Radio V1 – WLAN Remote Control",
-    "connection": "Connection",
     "host": "Host:",
     "port": "Port:",
     "connect": "Connect",
     "disconnect": "Disconnect",
     "connected": "Connected",
     "disconnected": "Disconnected",
-    "receiver": "Receiver",
     "frequency": "Frequency",
     "band": "Band",
     "mode": "Mode",
     "snr": "SNR",
-    "controls": "Controls",
     "step_size": "Step size",
     "volume": "Volume",
     "bandwidth": "Bandwidth",

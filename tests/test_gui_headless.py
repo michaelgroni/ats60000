@@ -342,14 +342,12 @@ class GuiSmokeTest(unittest.TestCase):
             application.switch_language("English")
             texts = {w.config_kwargs.get("text")
                      for w, _key in application._i18n_labels}
-            for expected in ("Connection", "Receiver", "Controls",
-                             "Memory slots", "Spectrum", "Display",
+            for expected in ("Memory slots", "Spectrum", "Display",
                              "Log", "Host:", "Slot:", "Points:"):
                 self.assertIn(expected, texts, f"missing: {expected}")
             application.switch_language("Deutsch")
             texts = {w.config_kwargs.get("text")
                      for w, _key in application._i18n_labels}
-            self.assertIn("Verbindung", texts)
             self.assertIn("Speicherplätze", texts)
         finally:
             from ats_mini_remote import i18n as _i18n

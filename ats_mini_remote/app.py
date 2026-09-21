@@ -161,6 +161,9 @@ class RemoteApp:
         # auch ohne Verbindung (Skala, Zeiger auf 0)
         self._smeter_redraw()
         self._snr_redraw()
+        # Einmaliger automatischer Verbindungsversuch; misslingt er,
+        # bleibt es ohne Fehlermeldung
+        self._autoconnect()
         # Mausrad steuert das Scroll-Canvas
         self.root.bind_all("<MouseWheel>", self._on_mousewheel)
 
@@ -190,8 +193,7 @@ class RemoteApp:
                 "<MouseWheel>"))
 
         # Verbindungsleiste
-        conn = ttk.LabelFrame(outer, text=self._t("connection"))
-        self._tr(conn, "connection")
+        conn = ttk.LabelFrame(outer)
         conn.pack(fill=tk.X, **pad)
         self._tr(ttk.Label(conn, text=self._t("host")), "host").grid(
             row=0, column=0, sticky="w", padx=4, pady=4)
@@ -208,8 +210,7 @@ class RemoteApp:
 
         # Status: weisser Bereich mit Siebensegment-Frequenzanzeige,
         # Handy-Batteriesymbol mit Spannungswert und dem S-Meter
-        status = tk.LabelFrame(outer, text=self._t("receiver"), bg="#ffffff")
-        self._tr(status, "receiver")
+        status = tk.LabelFrame(outer, bg="#ffffff")
         status.pack(fill=tk.X, **pad)
         left = tk.Frame(status, bg="#ffffff")
         left.grid(row=0, column=0, sticky="w", padx=10, pady=4)
@@ -256,8 +257,7 @@ class RemoteApp:
         # Steuerung und Speicherplaetze nebeneinander
         ctrl_mem = ttk.Frame(outer)
         ctrl_mem.pack(fill=tk.X, **pad)
-        ctrl = ttk.LabelFrame(ctrl_mem, text=self._t("controls"))
-        self._tr(ctrl, "controls")
+        ctrl = ttk.LabelFrame(ctrl_mem)
         ctrl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self._tr(ttk.Label(ctrl, text=self._t("frequency")),
@@ -571,6 +571,30 @@ class RemoteApp:
             f"{self._t('menu_about_project')}:\n{PROJECT_URL}")
 
     # ------------------------------------------------------ Aktionen am Radio
+
+    def _autoconnect(self):
+        """Einmaliger Verbindungsversuch beim Programmstart; ein
+        Misserfolg bleibt ohne Fehlermeldung, das Radio ist vielleicht
+        nur gerade aus."""
+        if self.client is None:
+            return
+        host = self.host_var.get().strip()
+        if not host:
+            return
+        try:
+            port = int(self.port_var.get())
+        except ValueError:
+            return
+        try:
+            self.client.connect(host, port)
+        except OSError:
+            return
+        self.set_state(True)
+        self.send(protocol.CMD_TOGGLE_LOG)
+        self._sweep_points_pending = True
+        self.show_memories()
+        self._schedule_memory_refresh()
+        self.log(self._t("connected_with", host=host, port=port))
 
     def connect(self):
         host = self.host_var.get().strip()
