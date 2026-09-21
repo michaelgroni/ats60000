@@ -243,12 +243,14 @@ class RemoteApp:
                     variable=self.squelch_sens_var,
                     command=self.on_squelch_sens_changed,
                     state=tk.DISABLED)
-                self.squelch_sens_scale.grid(row=row, column=1, columnspan=2,
+                self.squelch_sens_scale.grid(row=row, column=1, columnspan=3,
                                              sticky="we", padx=2, pady=6)
                 self.squelch_var = tk.BooleanVar(value=False)
-                ttk.Checkbutton(ctrl, variable=self.squelch_var,
-                                command=self.toggle_squelch).grid(
-                    row=row, column=3, sticky="w", padx=2, pady=6)
+                self.squelch_check = ttk.Checkbutton(
+                    ctrl, variable=self.squelch_var,
+                    command=self.toggle_squelch)
+                self.squelch_check.grid(row=row, column=4, sticky="w",
+                                        padx=(4, 0), pady=6)
                 continue
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
@@ -267,8 +269,8 @@ class RemoteApp:
         # Quasianaloges S-Meter rechts neben den Steuerelementen;
 # Metrik per Radiobutton: RSSI, S-Wert oder SNR
         meter = ttk.Frame(ctrl)
-        meter.grid(row=1, column=4, rowspan=len(rows), sticky="nsew",
-                   padx=(16, 4), pady=2)
+        meter.grid(row=1, column=5, rowspan=len(rows), sticky="nsew",
+                   padx=(12, 4), pady=2)
         self.smeter_metric_var = tk.StringVar(value="rssi")
         for i, (key, val) in enumerate((("metric_rssi", "rssi"),
                                         ("metric_s", "s"),
@@ -283,7 +285,7 @@ class RemoteApp:
                                        highlightthickness=0)
         self.smeter_canvas.grid(row=1, column=0, columnspan=3,
                                sticky="we", pady=(4, 2))
-        ctrl.columnconfigure(4, weight=1)
+        ctrl.columnconfigure(5, weight=1)
 
         # Speicher
         mem = ttk.LabelFrame(outer, text=self._t("memories"))
@@ -1498,6 +1500,7 @@ class RemoteApp:
             if sens_state != self._squelch_sens_state:
                 self._squelch_sens_state = sens_state
                 self.squelch_sens_scale.configure(state=sens_state)
+                self.squelch_check.configure(state=sens_state)
             self._current_volume = status.volume
             # Regler nur aktualisieren, wenn der Nutzer ihn nicht gerade
             # zieht und die Rauschsperre nicht gerade stummschaltet

@@ -445,6 +445,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._squelch_sens = 5
         application._squelch_sens_state = "disabled"
         application.squelch_sens_scale = FakeWidget(None)
+        application.squelch_check = FakeWidget(None)
         application._sweep_active = False
         application._sweep_points_pending = False
         application._sweep_points_band = "80M"
@@ -752,12 +753,15 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertEqual(app.squelch_sens_scale.config_kwargs.get("state"),
                          "normal")
         self.assertEqual(app._squelch_sens_state, "normal")
-        # SSB: Slider ausgegraut
+        # SSB: Slider und Checkbox ausgegraut
         app.squelch_sens_scale.config_kwargs.clear()
+        app.squelch_check.config_kwargs.clear()
         app._pending_status = protocol.ReceiverStatus(
             frequency=3_600, mode="LSB", band="80M")
         app._poll_main_thread()
         self.assertEqual(app.squelch_sens_scale.config_kwargs.get("state"),
+                         "disabled")
+        self.assertEqual(app.squelch_check.config_kwargs.get("state"),
                          "disabled")
         self.assertEqual(app._squelch_sens_state, "disabled")
 
