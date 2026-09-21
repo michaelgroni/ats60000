@@ -634,12 +634,13 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertGreater(needle_pos, 8 / 14)   # rechts vom S9-Tick
         self.assertLess(needle_pos, 1.0)
         self.assertAlmostEqual(needle_pos, 10 / 14, delta=0.02)
-        # SNR-Metrik: Ticks 0/15/30/45/60, Text in dB
+        # SNR-Metrik: Ticks 0..60 in 10er-Schritten, Text in dB
         app.smeter_metric_var.value = "snr"
         app._smeter_redraw()
         texts = [t[1].get("text") for t in app.smeter_canvas.texts]
         self.assertIn("30 dB", texts)
-        self.assertIn("45", texts)
+        for tick in ("0", "10", "20", "30", "40", "50", "60"):
+            self.assertIn(tick, texts)
 
     def test_click_snaps_to_step(self):
         from ats_mini_remote import protocol
