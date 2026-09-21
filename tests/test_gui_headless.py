@@ -574,7 +574,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         reds = [pg for pg in canvas.polygons
                 if pg[1].get("fill") == app._SMETER_RED]
         self.assertEqual(len(reds), 1)   # rotes Uebersteuerungsband
-        cx, cy = app._SMETER_PIVOT
+        cx, cy = canvas.winfo_width() / 2, app._SMETER_PIVOT[1]
         needles = [ln for ln in canvas.lines
                    if ln[1].get("fill") == app._SMETER_NEEDLE
                    and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1]
@@ -600,7 +600,7 @@ class SpectrumMarkerTest(unittest.TestCase):
             frequency=3_600, mode="AM", band="80M",
             rssi=64, snr=30)
         app._smeter_redraw()
-        cx, cy = app._SMETER_PIVOT
+        cx, cy = app.smeter_canvas.winfo_width() / 2, app._SMETER_PIVOT[1]
         r = app._SMETER_R
         # Tick-Labels liegen ausserhalb des Skalenradius
         for coords, kw in app.smeter_canvas.texts:
@@ -632,7 +632,7 @@ class SpectrumMarkerTest(unittest.TestCase):
             self.assertNotIn(tick, texts)
         # Zeigerposition S9+20 = Position 11 von 15 muss rechts vom
         # S9-Tick (Position 9 von 15) liegen
-        cx, cy = app._SMETER_PIVOT
+        cx, cy = canvas.winfo_width() / 2, app._SMETER_PIVOT[1]
         r = app._SMETER_R
         s9_text = [t for t in canvas.texts if t[1].get("text") == "9"][0]
         s9_angle = math.degrees(

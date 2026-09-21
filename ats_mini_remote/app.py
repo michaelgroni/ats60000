@@ -170,7 +170,7 @@ class RemoteApp:
         status.pack(fill=tk.X, **pad)
         left = tk.Frame(status, bg="#ffffff")
         left.grid(row=0, column=0, sticky="w", padx=10, pady=4)
-        self.freq_display = tk.Canvas(left, width=340, height=56,
+        self.freq_display = tk.Canvas(left, width=240, height=56,
                                       bg="#ffffff", highlightthickness=0)
         self.freq_display.grid(row=0, column=0, sticky="w")
         self.batt_canvas = tk.Canvas(left, width=120, height=26,
@@ -180,19 +180,24 @@ class RemoteApp:
         # Instrumente rechts im Empfaenger-Bereich: SNR-Meter links,
         # S-Meter rechts (umschaltbar zwischen Signalstaerke und S-Wert)
         meter = tk.Frame(status, bg="#ffffff")
-        meter.grid(row=0, column=1, sticky="ne",
+        meter.grid(row=0, column=1, sticky="we",
                    padx=(16, 10), pady=4)
+        status.columnconfigure(1, weight=1)
         self.snr_canvas = tk.Canvas(meter, width=self._SMETER_W,
                                     height=self._SMETER_H,
                                     bg=self._SMETER_FACE,
                                     highlightthickness=0)
-        self.snr_canvas.grid(row=0, column=0, sticky="w")
+        self.snr_canvas.grid(row=0, column=0, sticky="we")
         self.smeter_metric_var = tk.StringVar(value="rssi")
         self.smeter_canvas = tk.Canvas(meter, width=self._SMETER_W,
                                        height=self._SMETER_H,
                                        bg=self._SMETER_FACE,
                                        highlightthickness=0)
-        self.smeter_canvas.grid(row=0, column=1, sticky="w")
+        self.smeter_canvas.grid(row=0, column=1, sticky="we")
+        meter.columnconfigure(0, weight=1)
+        meter.columnconfigure(1, weight=1)
+        self.snr_canvas.bind("<Configure>", lambda _e: self._snr_redraw())
+        self.smeter_canvas.bind("<Configure>", lambda _e: self._smeter_redraw())
         metric_btns = tk.Frame(meter, bg="#ffffff")
         metric_btns.grid(row=0, column=2, sticky="ns", padx=(6, 0))
         for key, val in (("metric_rssi", "rssi"),
@@ -1078,8 +1083,8 @@ class RemoteApp:
         except ValueError:
             self.log(self._t("freq_out_of_band"))
 
-    _SMETER_W = 260
-    _SMETER_H = 122
+    _SMETER_W = 170
+    _SMETER_H = 110
     _SMETER_BG = "#ffffff"     # Hintergrund = Zifferblattfarbe, ab Start hell
     _SMETER_FACE = "#ffffff"   # weisses Zifferblatt
     _SMETER_TXT = "#111"
@@ -1087,8 +1092,8 @@ class RemoteApp:
     _SMETER_RED = "#c00"       # roter Bereich am Skalenende
     MARKER_COLOR = "#f80"        # Farbe der Frequenzmarke im Spektrum
     _SMETER_NEEDLE = MARKER_COLOR
-    _SMETER_PIVOT = (130, 86)   # Drehpunkt des Zeigers
-    _SMETER_R = 60              # Skalenradius
+    _SMETER_PIVOT = (85, 80)    # Drehpunkt des Zeigers
+    _SMETER_R = 55              # Skalenradius
     _SMETER_ARC = 180            # Zeichenauslenkung links->rechts (Grad)
     _SMETER_RED_FROM = 0.85     # ab hier Skalenbereich rot
 
@@ -1212,9 +1217,14 @@ class RemoteApp:
         import math as _math
         canvas.delete("all")
         value = max(0.0, min(value, 1.0))
-        w = self._SMETER_W
+        # Geometrie aus der echten Canvas-Groesse: die Instrumente
+        # wachsen mit dem Fenster mit und fuellen den Bereich aus.
+        # Vor dem ersten Mapping liefert Tk noch keine Breite.
+        w = canvas.winfo_width()
+        if w < 2:
+            w = self._SMETER_W
         h = self._SMETER_H
-        cx, cy = self._SMETER_PIVOT
+        cx, cy = w / 2, self._SMETER_PIVOT[1]
         r = self._SMETER_R
         arc = self._SMETER_ARC
 
