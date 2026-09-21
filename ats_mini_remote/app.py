@@ -1075,8 +1075,15 @@ class RemoteApp:
             # Zeigerwert und Ticks verwenden dieselbe Positionsskala:
             # 15 Schritte = S1..S9 (9) + 10..60 dB (6)
             s = protocol.s_meter(status.rssi, status.mode.upper() == "FM")
-            ticks = ([f"{i}" for i in range(1, 10)]
-                     + [f"+{d}" for d in range(10, 61, 10)])
+            # 15 Positionen: 1..9 und +10..+60; Labels nur auf jeder
+            # zweiten Position (1, 3, 5, 7, 9, +20, +40, +60)
+            ticks = []
+            for pos in range(15):
+                if pos < 9:
+                    label = str(pos + 1)
+                else:
+                    label = f"+{(pos - 8) * 10}"
+                ticks.append(label if pos % 2 == 0 else None)
             pos = 14   # ">S9+60" -> Skalenende
             if s.startswith("S"):
                 body, _, over = s[1:].partition("+")
@@ -1147,9 +1154,10 @@ class RemoteApp:
             x_in, y_in = polar(angle, r - 10)
             canvas.create_line(x_out, y_out, x_in, y_in,
                                fill=self._SMETER_TICK, width=2)
-            lx, ly = polar(angle, r + 13)
-            canvas.create_text(lx, ly, text=ticks[i], anchor="c",
-                               font=("", 8), fill=self._SMETER_TXT)
+            if ticks[i] is not None:
+                lx, ly = polar(angle, r + 13)
+                canvas.create_text(lx, ly, text=ticks[i], anchor="c",
+                                   font=("", 8), fill=self._SMETER_TXT)
             if i < n:
                 for sub in (1/2,):
                     a_sub = angle + arc / n * sub

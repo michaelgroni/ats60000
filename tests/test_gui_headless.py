@@ -614,8 +614,11 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertIn("S9+20", texts)
         self.assertIn("9", texts)        # Tick-Label ohne S-Praefix
         self.assertNotIn("S9", texts)    # S9 nur noch an der Wertziffer
-        self.assertIn("+10", texts)     # Bereich oberhalb S9 vorhanden
-        self.assertIn("+60", texts)
+        # Labels nur auf jedem zweiten Haupttick
+        for tick in ("1", "3", "5", "7", "9", "+20", "+40", "+60"):
+            self.assertIn(tick, texts)
+        for tick in ("2", "4", "6", "8", "+10", "+30", "+50"):
+            self.assertNotIn(tick, texts)
         # Zeigerposition S9+20 = Position 11 von 15 muss rechts vom
         # S9-Tick (Position 9 von 15) liegen
         cx, cy = app._SMETER_PIVOT
