@@ -609,14 +609,15 @@ class SpectrumMarkerTest(unittest.TestCase):
         canvas = app.smeter_canvas
         texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("S9+20", texts)
-        self.assertIn("S9", texts)      # Tick-Label
+        self.assertIn("9", texts)        # Tick-Label ohne S-Praefix
+        self.assertNotIn("S9", texts)    # S9 nur noch an der Wertziffer
         self.assertIn("+10", texts)     # Bereich oberhalb S9 vorhanden
         self.assertIn("+60", texts)
         # Zeigerposition S9+20 = Position 11 von 15 muss rechts vom
         # S9-Tick (Position 9 von 15) liegen
         cx, cy = app._SMETER_PIVOT
         r = app._SMETER_R
-        s9_text = [t for t in canvas.texts if t[1].get("text") == "S9"][0]
+        s9_text = [t for t in canvas.texts if t[1].get("text") == "9"][0]
         s9_angle = math.degrees(
             math.atan2(cy - s9_text[0][1], s9_text[0][0] - cx))
         needles = [ln for ln in canvas.lines

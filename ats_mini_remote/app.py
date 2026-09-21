@@ -1075,7 +1075,7 @@ class RemoteApp:
             # Zeigerwert und Ticks verwenden dieselbe Positionsskala:
             # 15 Schritte = S1..S9 (9) + 10..60 dB (6)
             s = protocol.s_meter(status.rssi, status.mode.upper() == "FM")
-            ticks = ([f"S{i}" for i in range(1, 10)]
+            ticks = ([f"{i}" for i in range(1, 10)]
                      + [f"+{d}" for d in range(10, 61, 10)])
             pos = 14   # ">S9+60" -> Skalenende
             if s.startswith("S"):
