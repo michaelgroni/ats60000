@@ -91,6 +91,7 @@ def make_tkinter_mock():
     tk_var = type("Var", (), {"__init__": lambda self, *a, **kw: None})
     mod.StringVar = tk_var
     mod.IntVar = tk_var
+    mod.BooleanVar = tk_var
     mod.Text = FakeWidget
     mod.END = "end"
     mod.VERTICAL = "vertical"
@@ -155,7 +156,7 @@ def make_tkinter_mock():
     setattr(ttk, "Treeview", FakeTreeview)
     for name in ["Label", "Button", "Entry",
                  "Combobox", "Spinbox", "Scale", "Radiobutton",
-                 "Scrollbar"]:
+                 "Scrollbar", "Checkbutton"]:
         setattr(ttk, name, FakeWidget)
     mod.ttk = ttk
 
@@ -433,6 +434,8 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._pending_status = None
         application._pending_screenshot = None
         application._volume_dragging = False
+        application._squelch_enabled = False
+        application._squelch_muted = False
         application._sweep_active = False
         application._sweep_points_pending = False
         application._sweep_points_band = "80M"
@@ -644,6 +647,66 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertIn("30 dB", texts)
         for tick in ("0", "10", "20", "30", "40", "50", "60"):
             self.assertIn(tick, texts)
+
+    def test_squelch_mutes_and_opens(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._squelch_enabled = True
+        app._volume_target = 30
+        app._current_volume = 30
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+        app.client = type("C", (), {"is_connected": lambda self: True})()
+        # Rauschen: RSSI und SNR unter den Schwellen -> stumm
+        app._squelch_eval(self._status_rssi(10, 5))
+        self.assertTrue(app._squelch_muted)
+        self.assertEqual(sent, [b"v" * 30])
+        # Hysterese: knapp ueber den Schliessschwellen bleibt stumm
+        app._squelch_eval(self._status_rssi(13, 8))
+        self.assertTrue(app._squelch_muted)
+        self.assertEqual(sent, [b"v" * 30])
+        # Oeffnen: ueber beide Oeffnungsschwellen -> Lautstaerke zurueck
+        app._squelch_eval(self._status_rssi(20, 15))
+        self.assertFalse(app._squelch_muted)
+        self.assertEqual(sent, [b"v" * 30, b"V" * 30])
+
+    def test_squelch_ignores_ssb(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._squelch_enabled = True
+        app._volume_target = 30
+        app._current_volume = 30
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+        # LSB: Sperre bleibt wirkungslos, nichts wird gesendet
+        app._squelch_eval(protocol.ReceiverStatus(
+            frequency=3_600, mode="LSB", band="80M", rssi=0, snr=0))
+        self.assertFalse(app._squelch_muted)
+        self.assertEqual(sent, [])
+
+    def test_squelch_disable_unmutes(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._squelch_enabled = True
+        app._volume_target = 30
+        app._current_volume = 30
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+        app.client = type("C", (), {"is_connected": lambda self: True})()
+        app._squelch_eval(self._status_rssi(10, 5))
+        self.assertTrue(app._squelch_muted)
+        # Sperre ausschalten: Stummschaltung wird aufgehoben
+        app._squelch_eval(self._status_rssi(10, 5))
+        app._squelch_enabled = False
+        app._squelch_eval(self._status_rssi(10, 5))
+        self.assertFalse(app._squelch_muted)
+        self.assertEqual(sent, [b"v" * 30, b"V" * 30])
+
+    def _status_rssi(self, rssi, snr):
+        from ats_mini_remote import protocol
+        return protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M",
+            rssi=rssi, snr=snr, volume=30)
 
     def test_click_snaps_to_step(self):
         from ats_mini_remote import protocol

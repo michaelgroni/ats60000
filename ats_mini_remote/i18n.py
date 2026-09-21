@@ -36,6 +36,7 @@ DE = {
     "bandwidth": "Bandbreite",
     "agc_attn": "AGC/Attn",
     "agc_on": "AGC ein",
+    "squelch": "Rauschsperre",
     # S-Meter
     "metric_rssi": "Signalstärke",
     "metric_s": "S-Wert",
@@ -149,6 +150,7 @@ EN = {
     "bandwidth": "Bandwidth",
     "agc_attn": "AGC/Attn",
     "agc_on": "AGC on",
+    "squelch": "Squelch",
     "metric_rssi": "Signal strength",
     "metric_s": "S-value",
     "metric_snr": "SNR",

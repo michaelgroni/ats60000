@@ -113,6 +113,8 @@ class RemoteApp:
         self._i18n_labels: list = []
         self._lang_var = tk.StringVar(value=i18n.current() or "Deutsch")
         self._memory_refresh_id: str | None = None
+        self._squelch_enabled = False
+        self._squelch_muted = False
         self._sweep_active = False
         self._sweep_freqs: list[int] = []
         self._sweep_index = 0
@@ -242,6 +244,13 @@ class RemoteApp:
                       font=("", 9, "bold")).grid(row=row, column=2, sticky="w", padx=8)
             ttk.Button(ctrl, text="▶", width=3,
                        command=up_cmd).grid(row=row, column=3, sticky="w")
+
+        self.squelch_var = tk.BooleanVar(value=False)
+        self._tr(ttk.Checkbutton(ctrl, text=self._t("squelch"),
+                                 variable=self.squelch_var,
+                                 command=self.toggle_squelch),
+                 "squelch").grid(row=row, column=1, columnspan=2,
+                                 sticky="w", padx=2, pady=(2, 0))
 
         # Quasianaloges S-Meter rechts neben den Steuerelementen;
 # Metrik per Radiobutton: RSSI, S-Wert oder SNR
@@ -1247,10 +1256,57 @@ class RemoteApp:
     def _send_volume(self):
         if not self.client.is_connected():
             return
-        target = self._volume_target
-        burst = protocol.volume_burst(self._current_volume, target)
+        burst = protocol.volume_burst(self._current_volume, self._volume_target)
         if burst:
             self.send(burst)
+
+    def toggle_squelch(self):
+        """Rauschsperre ein-/ausschalten."""
+        self._squelch_enabled = bool(self.squelch_var.get())
+        if not self._squelch_enabled and self._squelch_muted:
+            self._squelch_unmute()
+
+    def _squelch_unmute(self):
+        """Stummschaltung aufheben: das Radio steht auf 0, also von 0
+        zurueck zum vom Nutzer eingestellten Wert."""
+        self._squelch_muted = False
+        if not self.client.is_connected():
+            return
+        burst = protocol.volume_burst(0, self._volume_target)
+        if burst:
+            self.send(burst)
+
+    def _squelch_eval(self, status: protocol.ReceiverStatus):
+        """Rauschsperre fuer AM/FM: unterhalb der Schwellen stumm schalten.
+
+        Das Radio hat keine Mute-Funktion; die Sperre setzt daher die
+        Lautstaerke voruebergehend auf 0 und stellt beim Oeffnen den
+        vom Nutzer eingestellten Wert wieder her. Hysterese verhindert
+        Flattern bei Werten um die Schwelle; nur AM und FM werden
+        betrachtet, in SSB-Modi bleibt die Sperre wirkungslos.
+        """
+        if not self._squelch_enabled:
+            if self._squelch_muted:
+                self._squelch_unmute()
+            return
+        mode = status.mode.upper()
+        if mode not in ("AM", "FM"):
+            if self._squelch_muted:
+                self._squelch_unmute()
+            return
+        open_rssi = 15 if mode == "AM" else 20
+        close_rssi = open_rssi - 5
+        open_snr = 10
+        close_snr = 7
+        signal = status.rssi >= open_rssi and status.snr >= open_snr
+        noise = status.rssi <= close_rssi or status.snr <= close_snr
+        if self._squelch_muted:
+            if signal:
+                self._squelch_unmute()
+        elif noise:
+            if self._volume_target > 0 and self._current_volume > 0:
+                self._squelch_muted = True
+                self.send(protocol.volume_burst(self._current_volume, 0))
 
     def show_memories(self):
         self._pending_memory = []
@@ -1417,8 +1473,9 @@ class RemoteApp:
             self._last_status = status
             self._current_mode = status.mode
             self._current_volume = status.volume
-            # Regler nur aktualisieren, wenn der Nutzer ihn nicht gerade zieht
-            if not self._volume_dragging:
+            # Regler nur aktualisieren, wenn der Nutzer ihn nicht gerade
+            # zieht und die Rauschsperre nicht gerade stummschaltet
+            if not self._volume_dragging and not self._squelch_muted:
                 self.volume_var.set(status.volume)
             hz = status.display_frequency_hz()
             if status.mode.upper() == "FM":
@@ -1433,6 +1490,7 @@ class RemoteApp:
             self.snr_var.set(f"{status.snr} dB")
             self.batt_var.set(f"{protocol.fmt_num(status.voltage, 2)} V")
             self._set_row_values(status)
+            self._squelch_eval(status)
             self._smeter_redraw()
             # Frequenzmarke im Spektrum nachziehen, wenn die Frequenz
             # geaendert wurde (ausserhalb des Sweeps, der selbst zeichnet).
