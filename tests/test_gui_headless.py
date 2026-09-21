@@ -566,24 +566,18 @@ class SpectrumMarkerTest(unittest.TestCase):
         cx, cy = app._SMETER_PIVOT
         needles = [ln for ln in canvas.lines
                    if ln[1].get("fill") == app._SMETER_NEEDLE
-                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1
-                   and ln[1].get("width") == 2]
-        self.assertEqual(len(needles), 1)   # Zeiger vom Drehpunkt
-        tails = [ln for ln in canvas.lines
-                 if ln[1].get("fill") == app._SMETER_NEEDLE
-                 and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1
-                 and ln[1].get("width") == 4]
-        self.assertEqual(len(tails), 1)      # Gegengewicht
-        self.assertEqual(len(canvas.ovals), 2)   # Nabe (innen + aussen)
+                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1]
+        self.assertEqual(len(needles), 1)   # genau ein Zeiger vom Drehpunkt
+        self.assertEqual(len(canvas.ovals), 1)   # Drehpunkt
         texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("64 dBµV", texts)
         # Skala: RSSI-Ticks 20..120 vorhanden
         for tick in ("20", "60", "120"):
             self.assertIn(tick, texts)
-        # Zeigerwinkel: (64/127) des Bogens, a0 = -50 Grad, Bogen 100 Grad
+        # Zeigerwinkel: 64/127 der Halbkreisspanne, von links ueber oben
         (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
-        angle = math.degrees(math.atan2(x2 - cx, cy - y2))
-        expected = app._SMETER_A0 + app._SMETER_ARC * (64 / 127)
+        angle = math.degrees(math.atan2(cy - y2, x2 - cx))
+        expected = 180 - (64 / 127) * 180
         self.assertAlmostEqual(angle, expected, delta=2)
 
     def test_smeter_labels_outside_scale(self):
@@ -621,15 +615,18 @@ class SpectrumMarkerTest(unittest.TestCase):
         # Zeigerposition S9+20 = Position 11 von 15 muss rechts vom
         # S9-Tick (Position 9 von 15) liegen
         cx, cy = app._SMETER_PIVOT
+        r = app._SMETER_R
+        s9_text = [t for t in canvas.texts if t[1].get("text") == "S9"][0]
+        s9_angle = math.degrees(
+            math.atan2(cy - s9_text[0][1], s9_text[0][0] - cx))
         needles = [ln for ln in canvas.lines
                    if ln[1].get("fill") == app._SMETER_NEEDLE
-                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1
-                   and ln[1].get("width") == 2]
+                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1]
         (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
-        needle_angle = math.degrees(math.atan2(x2 - cx, cy - y2))
-        # Zeiger uebernimmt dieselbe Positionsskala wie die Ticks:
-        # 15 Ticks = Index 0..14, S9+20 = Index 10
-        needle_pos = (needle_angle - app._SMETER_A0) / app._SMETER_ARC
+        needle_angle = math.degrees(
+            math.atan2(cy - y2, x2 - cx))
+        # Zeiger uebernimmt dieselbe Winkelskala wie die Ticks
+        needle_pos = (180 - needle_angle) / 180
         self.assertGreater(needle_pos, 8 / 14)   # rechts vom S9-Tick
         self.assertLess(needle_pos, 1.0)
         self.assertAlmostEqual(needle_pos, 10 / 14, delta=0.02)
