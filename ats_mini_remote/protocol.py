@@ -44,6 +44,13 @@ def parse_float(text: str) -> float:
 
 # Feldindizes der Monitor-CSV-Zeile
 STATUS_FIELDS = 15
+# Begrenzungen fuer Werte aus dem Netzwerk: Die Firmware druckt RSSI/SNR
+# als uint8, Volume 0..63, AGC-Index 0..37, Kondensator als uint16,
+# Sequenznummer mod 256. Alles darueber ist manipuliert oder defekt.
+_TEXT_FIELD_MAX = 16
+_VOLUME_MAX = 63
+_UINT8_MAX = 255
+_UINT16_MAX = 65535
 _IDX_VERSION = 0
 _IDX_FREQUENCY = 1
 _IDX_BFO = 2
@@ -96,6 +103,14 @@ def parse_status(line: str) -> ReceiverStatus | None:
     fields = [f.strip() for f in line.split(",")]
     if len(fields) != STATUS_FIELDS:
         return None
+    # Freitextfelder begrenzen: keine Riesentexte und keine Steuerzeichen
+    # (die UI zeigt sie an, save_memory sendet sie zurueck ans Radio)
+    for text_field in (fields[_IDX_BAND], fields[_IDX_MODE],
+                       fields[_IDX_STEP], fields[_IDX_BANDWIDTH]):
+        if len(text_field) > _TEXT_FIELD_MAX:
+            return None
+        if any(ord(c) < 32 or ord(c) > 126 for c in text_field):
+            return None
     try:
         version = int(fields[_IDX_VERSION])
         frequency = int(fields[_IDX_FREQUENCY])
@@ -111,15 +126,32 @@ def parse_status(line: str) -> ReceiverStatus | None:
     except (ValueError, OverflowError):
         return None
 
-    # Werte aus dem Netzwerk begrenzen: Die UI rechnet mit ihnen
-    # (Frequenzumrechnung, Slider, Skalen) und darf weder auf Riesenzahlen
-    # noch auf Spezialwerte wie inf/nan treffen.
-    if not all(abs(v) <= 1_000_000_000 for v in
-               (version, frequency, bfo, cal, agc, volume, rssi, snr,
-                capacitor, seqnum)):
+    # Werte aus dem Netzwerk auf firmware-plausible Bereiche begrenzen:
+    # Die UI rechnet mit ihnen (Frequenzumrechnung, Slider, Skalen) und
+    # volume_burst leitet aus _current_volume die Befehlslaenge ab -- ein
+    # Riesenwert wuerde dort einen Riesen-Burst erzeugen.
+    if not 0 <= version <= 1_000_000:
+        return None
+    if not 0 <= frequency <= 100_000:
+        return None
+    if not -1_000_000 <= bfo <= 1_000_000:
+        return None
+    if not -1_000_000 <= cal <= 1_000_000:
+        return None
+    if not 0 <= agc <= _UINT8_MAX:
+        return None
+    if not 0 <= volume <= _VOLUME_MAX:
+        return None
+    if not 0 <= rssi <= _UINT8_MAX:
+        return None
+    if not 0 <= snr <= _UINT8_MAX:
+        return None
+    if not 0 <= capacitor <= _UINT16_MAX:
+        return None
+    if not 0 <= seqnum <= _UINT16_MAX:
         return None
     if voltage != voltage or voltage in (float("inf"), float("-inf")) \
-            or abs(voltage) > 1000.0:
+            or not 0.0 <= voltage <= 20.0:
         return None
 
     return ReceiverStatus(
@@ -298,10 +330,19 @@ def format_frequency_command(hz: int, ssb: bool) -> bytes:
 def format_memory_command(slot: int, band: str, hz: int, mode: str) -> bytes:
     """Erzeugt den Speicherbefehl '#<slot>,<band>,<freq>,<mode>\r\n'.
 
-    Frequenz 0 löscht den Slot.
+    Frequenz 0 löscht den Slot. Band und Modus stammen hier aus dem
+    zuletzt empfangenen Status und damit aus dem Netzwerk -- beide
+    werden deshalb auf druckbare Zeichen begrenzt, damit kein
+    manipuliertes Radio Steuerzeichen in den Befehl einschleust.
     """
     if not 1 <= slot <= 32:
         raise ValueError("Slot muss zwischen 1 und 32 liegen")
+    for text in (band, mode):
+        if not text or len(text) > 16 \
+                or any(ord(c) < 32 or ord(c) > 126 for c in text):
+            raise ValueError("Ung\u00fcltiger Band- oder Modustext")
+    if not 0 <= hz <= 1_000_000_000:
+        raise ValueError("Frequenz au\u00dferhalb plausibler Grenzen")
     return f"#{slot:02d},{band},{hz},{mode}\r\n".encode("ascii")
 
 
@@ -354,11 +395,15 @@ def mode_steps(current: str, target: str) -> bytes:
 
     Wie doMode() der Firmware: pro M/m genau ein Schritt im Zyklus
     LSB -> USB -> AM -> LSB, FM wird uebersprungen. Bereits passender
-    Modus oder FM als Quelle oder Ziel -> leerer Befehl.
+    Modus oder FM als Quelle oder Ziel -> leerer Befehl. Unbekannte
+    Modi (manipulierter Status) ergeben ebenfalls einen leeren Befehl
+    statt einer Ausnahme.
     """
     cur = current.upper()
     tgt = target.upper()
     if cur == tgt or cur == "FM" or tgt == "FM":
+        return b""
+    if cur not in NON_FM_MODES or tgt not in NON_FM_MODES:
         return b""
     i_cur = NON_FM_MODES.index(cur)
     i_tgt = NON_FM_MODES.index(tgt)
@@ -639,8 +684,12 @@ def volume_burst(current: int, target: int) -> bytes:
 
     Die Firmware kennt nur V/v (Lautstärke ±1). Die Differenz wird als
     ein einziger zusammenhängender Bytestrom übergeben, damit das Radio
-    sie als zusammengehörige Folge verarbeitet.
+    sie als zusammengehörige Folge verarbeitet. Beide Werte werden auf
+    den Firmware-Bereich 0..63 begrenzt -- ein manipulierter Status mit
+    Riesen-_current_volume würde sonst einen Riesen-Burst erzeugen.
     """
+    current = max(0, min(current, _VOLUME_MAX))
+    target = max(0, min(target, _VOLUME_MAX))
     if target == current:
         return b""
     command = CMD_VOLUME_UP if target > current else CMD_VOLUME_DOWN

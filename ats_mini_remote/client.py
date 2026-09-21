@@ -49,6 +49,7 @@ class RemoteClient:
         self._on_screenshot: Callable[[protocol.Screenshot], None] | None = on_screenshot
         self._on_screenshot_progress: Callable[[int, int], None] | None = on_screenshot_progress
         self._last_line_command = 0.0
+        self._screenshot_row_chars = 0
 
     def _send_guard(self, data: bytes) -> None:
         """Vollständige Befehlszeilen vor dem Versand schützen.
@@ -83,6 +84,7 @@ class RemoteClient:
         # uebersprungen, bis die Hex-Headerzeile ankommt.
         self._screenshot_lines = []
         self._screenshot_target_rows = 0
+        self._screenshot_row_chars = 0
         self._screenshot_skipped = 0
         self._collecting_screenshot = True
         if self._on_screenshot_progress is not None:
@@ -149,6 +151,9 @@ class RemoteClient:
                 sock.close()
             except OSError:
                 pass
+        # Grund kann aus dem Netzwerk stammen (recv-Fehler); die UI
+        # zeigt ihn an, also Laenge begrenzen
+        reason = reason[:200] if isinstance(reason, str) else str(reason)[:200]
         if was_connected and self._on_disconnect is not None:
             self._on_disconnect(reason)
 
@@ -156,9 +161,13 @@ class RemoteClient:
     # Zeilen niemals endlos anwachsen lassen, Screenshot-Sammlung
     # nach Zeilenzahl/Bytes abbrechen. Ein CSV-Status ist ~100 Zeichen,
     # eine Screenshot-Pixelzeile ~640 Hex-Zeichen (320 Byte/Zeile * 2).
+    # Gilt auch fuer Daten OHNE Zeilenende: ein Boeswilling, der nur
+    # Bytes ohne \n schickt, darf den Empfangspuffer nicht endlos
+    # fuellen (RAM-DoS) -- auch nicht unterhalb der Zeilenbegrenzung.
     _MAX_LINE_BYTES = 64 * 1024
     _SCREENSHOT_MAX_ROWS = 4097          # Header + 4096 Pixelzeilen
     _SCREENSHOT_MAX_LINE_CHARS = 16 * 1024
+    _MAX_PENDING_BYTES = 8 * 1024 * 1024  # Obergrenze fuer Daten ohne \n
 
     def _read_loop(self) -> None:
         sock = self._sock
@@ -171,6 +180,13 @@ class RemoteClient:
                 if not chunk:
                     raise ConnectionError("Verbindung vom Empfänger geschlossen")
                 buf += chunk
+                # Daten ohne Zeilenende duerfen den Puffer nicht endlos
+                # wachsen lassen (RAM-DoS): erst der Zeilenvorschub
+                # schliesst eine Zeile ab, vorher gilt die Gesamtgrenze
+                if b"\n" not in buf and len(buf) > self._MAX_PENDING_BYTES:
+                    self._handle_disconnect(
+                        "Verbindung wegen Datenflut ohne Zeilenende getrennt")
+                    return
                 while b"\n" in buf:
                     line, _, rest = buf.partition(b"\n")
                     buf = bytearray(rest)
@@ -188,6 +204,7 @@ class RemoteClient:
         self._collecting_screenshot = False
         self._screenshot_lines = []
         self._screenshot_target_rows = 0
+        self._screenshot_row_chars = 0
         if self._on_screenshot_progress is not None:
             self._on_screenshot_progress(0, 0)
         if self._on_line is not None:
@@ -221,10 +238,24 @@ class RemoteClient:
                     self._abort_screenshot("Header kein Hex")
                     return
                 height = int.from_bytes(header[22:26], "little")
+                width = int.from_bytes(header[18:22], "little")
                 if not 1 <= height <= self._SCREENSHOT_MAX_ROWS - 1:
                     self._abort_screenshot("unplausible Bildhöhe")
                     return
+                if not 1 <= width <= 4096:
+                    self._abort_screenshot("unplausible Bildbreite")
+                    return
+                if width * height * 2 > 2 * 1024 * 1024:
+                    self._abort_screenshot("Bild zu gross")
+                    return
                 self._screenshot_target_rows = 1 + height
+                self._screenshot_row_chars = width * 2
+            elif self._screenshot_target_rows and \
+                    len(text) > self._screenshot_row_chars * 2:
+                # Pixelzeilen haben feste Laenge (Breite * 2 Byte * 2 Hex-
+                # Zeichen); Laengeres ist Muell einer boesen Gegenseite
+                self._abort_screenshot("Zeile zu lang")
+                return
             if self._on_screenshot_progress is not None:
                 self._on_screenshot_progress(
                     len(self._screenshot_lines), self._screenshot_target_rows)

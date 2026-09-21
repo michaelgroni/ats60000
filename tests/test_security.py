@@ -335,3 +335,273 @@ class ScreenshotWithMonitorRaceTest(unittest.TestCase):
         self.assertTrue(screenshots, "Screenshot muss trotz Monitorzeile ankommen")
         self.assertFalse(any("abgebrochen" in e for e in logs),
                          f"logs={logs}")
+
+
+class MaliciousStatusBoundsTest(unittest.TestCase):
+    """Werte ausserhalb der Firmware-Bereiche werden verworfen.
+
+    Die Firmware druckt RSSI/SNR als uint8, Volume 0..63, AGC 0..37,
+    Kondensator als uint16. Ein manipuliertes Radio, das Riesenwerte
+    sendet, darf sie nicht in die UI durchreichen: volume_burst leitet
+    aus _current_volume die Befehlslaenge ab und wuerde sonst beim
+    naechsten Slider-Klick einen Riesen-Burst erzeugen.
+    """
+
+    def _line(self, **kw):
+        base = {"201,100000,0,0,VHF,FM,10k,Auto,0,30,32,25,1500,4.05,0"}
+        base = base.pop()
+        fields = base.split(",")
+        for idx, value in kw.items():
+            fields[int(idx)] = value
+        return ",".join(fields)
+
+    def test_volume_out_of_range_rejected(self):
+        self.assertIsNone(protocol.parse_status(self._line(**{"9": "64"})))
+        self.assertIsNone(protocol.parse_status(self._line(**{"9": "-1"})))
+        self.assertIsNone(protocol.parse_status(self._line(**{"9": "100000000"})))
+
+    def test_rssi_snr_out_of_range_rejected(self):
+        self.assertIsNone(protocol.parse_status(self._line(**{"10": "256"})))
+        self.assertIsNone(protocol.parse_status(self._line(**{"11": "-5"})))
+        self.assertIsNone(protocol.parse_status(self._line(**{"11": "999"})))
+
+    def test_frequency_out_of_range_rejected(self):
+        # Firmware: kHz (AM/SSB) oder 10-kHz-Schritte (FM), max. VHF-Oberband
+        self.assertIsNone(protocol.parse_status(self._line(**{"1": "999999999"})))
+        self.assertIsNone(protocol.parse_status(self._line(**{"1": "-100"})))
+
+    def test_voltage_out_of_range_rejected(self):
+        self.assertIsNone(protocol.parse_status(self._line(**{"13": "25.0"})))
+        self.assertIsNone(protocol.parse_status(self._line(**{"13": "-0.1"})))
+
+    def test_control_characters_in_text_fields_rejected(self):
+        line = "201,100000,0,0,VH\tF,FM,10k,Auto,0,30,32,25,1500,4.05,0"
+        self.assertIsNone(protocol.parse_status(line))
+        line = "201,100000,0,0,VH\rF,FM,10k,Auto,0,30,32,25,1500,4.05,0"
+        self.assertIsNone(protocol.parse_status(line))
+
+    def test_long_text_fields_rejected(self):
+        line = ("201,100000,0,0," + "A" * 20 + ",FM,10k,Auto,0,30,32,25,1500,"
+                "4.05,0")
+        self.assertIsNone(protocol.parse_status(line))
+
+    def test_valid_status_still_parses(self):
+        status = protocol.parse_status(self._line())
+        self.assertIsNotNone(status)
+        self.assertEqual(status.volume, 30)
+
+
+class MemoryCommandInjectionTest(unittest.TestCase):
+    """Band/Modus aus einem manipulierten Status duerfen keinen
+    Steuerzeichencode in den Speicherbefehl einschleusen."""
+
+    def test_control_characters_rejected(self):
+        with self.assertRaises(ValueError):
+            protocol.format_memory_command(1, "VH\tF", 100_000, "FM")
+        with self.assertRaises(ValueError):
+            protocol.format_memory_command(1, "VHF", 100_000, "F\rM123,1,2")
+
+    def test_empty_and_long_rejected(self):
+        with self.assertRaises(ValueError):
+            protocol.format_memory_command(1, "", 100_000, "FM")
+        with self.assertRaises(ValueError):
+            protocol.format_memory_command(1, "VHF", 100_000, "M" * 20)
+
+    def test_huge_frequency_rejected(self):
+        with self.assertRaises(ValueError):
+            protocol.format_memory_command(1, "VHF", 10**12, "FM")
+
+    def test_valid_command_still_formats(self):
+        cmd = protocol.format_memory_command(1, "VHF", 107_900_000, "FM")
+        self.assertEqual(cmd, b"#01,VHF,107900000,FM\r\n")
+
+
+class VolumeBurstBoundsTest(unittest.TestCase):
+    """volume_burst begrenzt beide Werte auf den Firmware-Bereich 0..63;
+    ein manipulierter _current_volume darf keinen Riesen-Burst erzeugen."""
+
+    def test_current_out_of_range_clamped(self):
+        self.assertEqual(protocol.volume_burst(10**9, 0), b"v" * 63)
+        self.assertEqual(protocol.volume_burst(-5, 10), b"V" * 10)
+
+    def test_target_out_of_range_clamped(self):
+        self.assertEqual(protocol.volume_burst(10, 10**9), b"V" * 53)
+        self.assertEqual(protocol.volume_burst(10, -100), b"v" * 10)
+
+    def test_normal_burst_unchanged(self):
+        self.assertEqual(protocol.volume_burst(30, 40), b"V" * 10)
+        self.assertEqual(protocol.volume_burst(40, 30), b"v" * 10)
+
+
+class ModeStepsRobustnessTest(unittest.TestCase):
+    """Unbekannte Modi aus einem manipulierten Status duerfen keine
+    Ausnahme werfen (der Sweep-Button wuerde sonst crashen)."""
+
+    def test_unknown_mode_returns_empty(self):
+        self.assertEqual(protocol.mode_steps("XX", "LSB"), b"")
+        self.assertEqual(protocol.mode_steps("LSB", "XX"), b"")
+        self.assertEqual(protocol.mode_steps("", "AM"), b"")
+
+    def test_normal_steps_unchanged(self):
+        self.assertEqual(protocol.mode_steps("AM", "LSB"), b"M")
+        self.assertEqual(protocol.mode_steps("LSB", "AM"), b"m")
+
+
+class EndlessStreamWithoutNewlineTest(unittest.TestCase):
+    """Ein Boeswilling, der endlos Daten OHNE Zeilenende schickt,
+    muss zum Abbruch der Verbindung fuehren (RAM-DoS)."""
+
+    def test_flood_without_newline_disconnects(self):
+        import threading as _th
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        ready = _th.Event()
+
+        def run():
+            conn, _ = server.accept()
+            ready.set()
+            try:
+                payload = b"A" * 4096
+                while True:
+                    conn.sendall(payload)
+                    _th.Event().wait(0.001)
+            except OSError:
+                pass
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                server.close()
+
+        _th.Thread(target=run, daemon=True).start()
+        ready.wait(2)
+
+        received = []
+        client = RemoteClient(on_disconnect=received.append)
+        # Grenze fuer den Test niedrig setzen, sonst dauert der Test zu lang
+        client._MAX_PENDING_BYTES = 64 * 1024
+        client.connect("127.0.0.1", port)
+        for _ in range(600):
+            if received:
+                break
+            _th.Event().wait(0.01)
+        client.disconnect()
+        self.assertTrue(received, "Client muss bei Datenflut ohne "
+                                  "Zeilenende trennen")
+        self.assertFalse(client.is_connected())
+
+
+class ScreenshotSizeLimitTest(unittest.TestCase):
+    """Header mit Riesen-Breite*Hoehe (aber einzeln plausiblen Werten)
+    wird schon beim Empfang abgelehnt, nicht erst beim Dekodieren."""
+
+    def test_oversize_image_aborts_transfer(self):
+        import threading as _th
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        ready = _th.Event()
+
+        def run():
+            conn, _ = server.accept()
+            ready.set()
+            try:
+                conn.recv(16)   # 'C' abwarten
+                header = bytearray()
+                header += b"BM"
+                header += (66).to_bytes(4, "little")
+                header += b"\x00\x00\x00\x00"
+                header += (66).to_bytes(4, "little")
+                header += (40).to_bytes(4, "little")
+                header += (4096).to_bytes(4, "little")     # Breite
+                header += (4096).to_bytes(4, "little")     # Hoehe
+                header += b"\x01\x00\x10\x00" + (3).to_bytes(4, "little")
+                header += (0).to_bytes(4, "little") + b"\x00" * 16
+                header += b"\x00\xf8\x00\x00\xe0\x07\x00\x00\x1f\x00\x00\x00"
+                conn.sendall(b"\r\n" + header.hex().encode() + b"\r\n")
+                conn.settimeout(3)
+                while True:
+                    data = conn.recv(16)
+                    if not data:
+                        break
+            except OSError:
+                pass
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                server.close()
+
+        _th.Thread(target=run, daemon=True).start()
+        ready.wait(2)
+
+        logs = []
+        client = RemoteClient(on_line=logs.append)
+        client.connect("127.0.0.1", port)
+        client.request_screenshot()
+        for _ in range(100):
+            if any("Screenshot" in e for e in logs):
+                break
+            _th.Event().wait(0.02)
+        client.disconnect()
+        self.assertTrue(any("abgebrochen" in e for e in logs), f"logs={logs}")
+
+
+class ScreenshotRowLengthTest(unittest.TestCase):
+    """Pixelzeilen, die laenger sind als die Headerbreite verspricht,
+    brechen die Uebertragung ab."""
+
+    def test_oversize_row_aborts_transfer(self):
+        import threading as _th
+        from ats_mini_remote import mock_receiver
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        port = server.getsockname()[1]
+        ready = _th.Event()
+
+        def run():
+            conn, _ = server.accept()
+            ready.set()
+            try:
+                conn.recv(16)   # 'C' abwarten
+                state = mock_receiver.MockState()
+                lines = state.screenshot_hex().split("\r\n")
+                # zweite Pixelzeile um Faktor 3 verlaengern
+                lines[2] = lines[2] * 3
+                conn.sendall(("\r\n" + "\r\n".join(lines)).encode("ascii"))
+                conn.settimeout(3)
+                while True:
+                    data = conn.recv(16)
+                    if not data:
+                        break
+            except OSError:
+                pass
+            finally:
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                server.close()
+
+        _th.Thread(target=run, daemon=True).start()
+        ready.wait(2)
+
+        logs = []
+        client = RemoteClient(on_line=logs.append)
+        client.connect("127.0.0.1", port)
+        client.request_screenshot()
+        for _ in range(100):
+            if any("Screenshot" in e for e in logs):
+                break
+            _th.Event().wait(0.02)
+        client.disconnect()
+        self.assertTrue(any("abgebrochen" in e for e in logs), f"logs={logs}")

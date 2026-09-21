@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -106,6 +107,10 @@ class RemoteApp:
             on_screenshot_progress=self.on_screenshot_progress,
         )
         self._pending_memory: list[tuple[int, str, int, str]] = []
+        # Sperre fuer Puffer, die der Leser-Thread des Clients fuellt und
+        # die Poll-Schleife im Tk-Hauptthread liest: ohne sie kann die
+        # Iteration ueber die Liste nebenlaeufig aendern (RuntimeError)
+        self._ui_lock = threading.Lock()
         self._screenshot: protocol.Screenshot | None = None
         self._volume_target = 0
         self._row_value_vars: dict[str, tk.StringVar] = {}
@@ -1551,7 +1556,11 @@ class RemoteApp:
             freq_hz = status.frequency * 10_000
         else:
             freq_hz = status.frequency * 1000
-        self.send(protocol.format_memory_command(slot, band, freq_hz, mode))
+        try:
+            self.send(protocol.format_memory_command(slot, band, freq_hz, mode))
+        except ValueError:
+            self.log(self._t("err_invalid_memory_values"))
+            return
         self.root.after(400, self.show_memories)
 
     def clear_memory(self):
@@ -1563,7 +1572,11 @@ class RemoteApp:
         status = self._last_status
         band = status.band if status else "MW"
         mode = status.mode if status else "AM"
-        self.send(protocol.format_memory_command(slot, band, 0, mode))
+        try:
+            self.send(protocol.format_memory_command(slot, band, 0, mode))
+        except ValueError:
+            self.log(self._t("err_invalid_memory_values"))
+            return
         self.root.after(400, self.show_memories)
 
     def _flush_memories(self):
@@ -1604,18 +1617,24 @@ class RemoteApp:
     _current_volume: int = -1
 
     def on_status(self, status: protocol.ReceiverStatus):
-        self._pending_status = status
-        if self._sweep_active:
-            self.root.after(0, lambda: self._sweep_on_status(status))
+        # Wird aus dem Leser-Thread des Clients gerufen: nur Daten
+        # hinterlegen, kein Tk-Aufruf. Die Poll-Schleife im Hauptthread
+        # wertet Status und Sweep-Phase aus.
+        with self._ui_lock:
+            self._pending_status = status
+            if self._sweep_active:
+                self._pending_sweep_status = status
 
     def on_memory(self, mem: tuple[int, str, int, str]):
-        self._pending_memory.append(mem)
+        with self._ui_lock:
+            self._pending_memory.append(mem)
 
     def _on_radio_line(self, line: str):
         self.log(line, source="radio")
 
     def on_disconnect(self, reason: str):
-        self.root.after(0, lambda: self._handle_disconnect(reason))
+        with self._ui_lock:
+            self._pending_disconnect = reason
 
     def _handle_disconnect(self, reason: str):
         self.set_state(False)
@@ -1625,7 +1644,8 @@ class RemoteApp:
         self.log(self._t("connection_lost", reason=reason))
 
     def on_screenshot(self, shot: protocol.Screenshot):
-        self._pending_screenshot = shot
+        with self._ui_lock:
+            self._pending_screenshot = shot
 
     def on_screenshot_progress(self, received: int, total: int):
         """Fortschritt des Screenshot-Empfangs (aus dem Leser-Thread).
@@ -1633,7 +1653,8 @@ class RemoteApp:
         total = 0: Uebertragung laeuft noch ohne bekannte Zeilenzahl
         (Header fehlt noch). Sonst: received von total Zeilen.
         """
-        self._pending_screenshot_progress = (received, total)
+        with self._ui_lock:
+            self._pending_screenshot_progress = (received, total)
 
     # ----------------------------------------------------------- Hilfsfunktionen
 
@@ -1646,8 +1667,14 @@ class RemoteApp:
             self.state_label.config(text=self._t("disconnected"), foreground="#a00")
 
     def log(self, message: str, source: str = "app"):
-        """Meldung im Log vormerken; source: 'app' oder 'radio'."""
-        self._pending_log.append((source, message))
+        """Meldung im Log vormerken; source: 'app' oder 'radio'.
+
+        Kann aus dem Leser-Thread kommen, deshalb hinter der Sperre.
+        Radio-Zeilen sind ohnehin auf 64 KiB begrenzt; App-Meldungen
+        sind kurz.
+        """
+        with self._ui_lock:
+            self._pending_log.append((source, message))
 
     def _log_line_is_raw(self, message: str) -> bool:
         """True, wenn eine Radio-Zeile keinem erwarteten Format entspricht.
@@ -1669,14 +1696,36 @@ class RemoteApp:
         return True
 
     def _poll_main_thread(self):
-        for source, message in self._pending_log:
-            self._log_insert(source, message)
-        self._pending_log = []
-
-        status = getattr(self, "_pending_status", None)
-        if status is not None:
+        # Puffer unterm Schutz der Sperre entnehmen: der Leser-Thread des
+        # Clients fuellt sie nebenlaeufig weiter, die Iteration darf
+        # nicht ueber eine gleichzeitig geaenderte Liste laufen
+        with self._ui_lock:
+            entries = self._pending_log
+            self._pending_log = []
+            status = self._pending_status
             self._pending_status = None
+            sweep_status = self._pending_sweep_status
+            self._pending_sweep_status = None
+            shot = self._pending_screenshot
+            self._pending_screenshot = None
+            progress = self._pending_screenshot_progress
+            self._pending_screenshot_progress = None
+            disconnect = self._pending_disconnect
+            self._pending_disconnect = None
+        for source, message in entries:
+            self._log_insert(source, message)
+
+        # Sweep-Status vor dem normalen Status verarbeiten: die Messung
+        # gehoert zur Frequenz, auf der das Radio gerade steht
+        if sweep_status is not None and self._sweep_active:
+            self._sweep_on_status(sweep_status)
+
+        if disconnect is not None:
+            self._handle_disconnect(disconnect)
+
+        if status is not None:
             self._last_status = status
+            self._current_mode = status.mode
             self._current_mode = status.mode
             # Empfindlichkeits-Regler der Rauschsperre nur bei AM/FM
             sens_state = ("normal" if status.mode.upper() in ("AM", "FM")
@@ -1717,15 +1766,11 @@ class RemoteApp:
                     self._sweep_marker_hz = hz
                     self._sweep_draw()
 
-        shot = getattr(self, "_pending_screenshot", None)
         if shot is not None:
-            self._pending_screenshot = None
             self._screenshot = shot
             self._show_screenshot(shot)
 
-        progress = getattr(self, "_pending_screenshot_progress", None)
         if progress is not None:
-            self._pending_screenshot_progress = None
             received, total = progress
             if total > 0:
                 percent = min(99, received * 100 // total)
@@ -1748,6 +1793,12 @@ class RemoteApp:
     _pending_status: protocol.ReceiverStatus | None = None
     _pending_screenshot: protocol.Screenshot | None = None
     _pending_screenshot_progress: tuple[int, int] | None = None
+    _pending_disconnect: str | None = None
+    _pending_sweep_status: protocol.ReceiverStatus | None = None
+    # Sperre als Klassenattribut: Headless-Tests bauen die App ohne
+    # __init__ per object.__new__; ein prozessweit geteiltes Lock ist
+    # dort unproblematisch (nie verschachtelt, nie rekursiv)
+    _ui_lock = threading.Lock()
     _sweep_active: bool = False
     _sweep_timeout_id: str | None = None
     _sweep_phase_setup: tuple | None = None
