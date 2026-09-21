@@ -134,6 +134,18 @@ class ScreenshotDecodeTest(unittest.TestCase):
         size = int.from_bytes(bmp[2:6], "little")
         self.assertEqual(size, len(bmp))
 
+    def test_bmp_bitfield_masks_and_pixels(self):
+        # Regressions test: Die Farbmasken muessen little-endian als
+        # RGB565-Werte 0xF800/0x07E0/0x001F im Dateikopf stehen (so wie
+        # die Firmware sie sendet), sonst fehlt z.B. Rot in Bildbetrachtern.
+        shot = protocol.decode_screenshot(self._build(pixel=0xF800))
+        bmp = shot.to_bmp()
+        masks = [int.from_bytes(bmp[54 + i * 4:58 + i * 4], "little")
+                 for i in range(3)]
+        self.assertEqual(masks, [0xF800, 0x07E0, 0x001F])
+        # erster Pixel (erste Bildzeile steht am Dateianfang der Pixeldaten)
+        self.assertEqual(int.from_bytes(bmp[66:68], "little"), 0xF800)
+
 
 class LocaleNumberTest(unittest.TestCase):
     def test_fmt_num_uses_active_locale(self):

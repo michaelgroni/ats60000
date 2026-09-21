@@ -674,7 +674,7 @@ class Screenshot:
         out += struct.pack("<I", 14 + 40 + 12)
         out += struct.pack("<IiiHHIIiiII", 40, self.width, self.height,
                             1, 16, 3, 0, 0, 0, 0, 0)
-        out += struct.pack("<III", 0x00F80000, 0x000007E0, 0x0000001F)
+        out += struct.pack("<III", 0x0000F800, 0x000007E0, 0x0000001F)
         for row in reversed(self.rows):
             for r, g, b in row:
                 out += struct.pack("<H", (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3))
