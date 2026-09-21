@@ -177,22 +177,26 @@ class RemoteApp:
                                      bg="#ffffff", highlightthickness=0)
         self.batt_canvas.grid(row=1, column=0, sticky="w", pady=(2, 4))
 
-        # Quasianaloges S-Meter rechts im Empfänger-Bereich;
-        # Metrik per Radiobutton: RSSI, S-Wert oder SNR
+        # Instrumente rechts im Empfaenger-Bereich: SNR-Meter links,
+        # S-Meter rechts (umschaltbar zwischen Signalstaerke und S-Wert)
         meter = tk.Frame(status, bg="#ffffff")
         meter.grid(row=0, column=1, sticky="ne",
                    padx=(16, 10), pady=4)
+        self.snr_canvas = tk.Canvas(meter, width=self._SMETER_W,
+                                    height=self._SMETER_H,
+                                    bg=self._SMETER_FACE,
+                                    highlightthickness=0)
+        self.snr_canvas.grid(row=0, column=0, sticky="w")
         self.smeter_metric_var = tk.StringVar(value="rssi")
         self.smeter_canvas = tk.Canvas(meter, width=self._SMETER_W,
                                        height=self._SMETER_H,
                                        bg=self._SMETER_FACE,
                                        highlightthickness=0)
-        self.smeter_canvas.grid(row=0, column=0, sticky="w")
+        self.smeter_canvas.grid(row=0, column=1, sticky="w")
         metric_btns = tk.Frame(meter, bg="#ffffff")
-        metric_btns.grid(row=0, column=1, sticky="ns", padx=(6, 0))
+        metric_btns.grid(row=0, column=2, sticky="ns", padx=(6, 0))
         for key, val in (("metric_rssi", "rssi"),
-                         ("metric_s", "s"),
-                         ("metric_snr", "snr")):
+                         ("metric_s", "s")):
             self._tr(tk.Radiobutton(metric_btns, text=self._t(key),
                                    value=val,
                                    variable=self.smeter_metric_var,
@@ -446,6 +450,7 @@ class RemoteApp:
             image="", text=t("no_screenshot")
             if getattr(self, "_shot_photo", None) is None else "")
         self._smeter_redraw()
+        self._snr_redraw()
 
     def toggle_log(self):
         """Log-Anzeige ein-/ausblenden (Startzustand: ausgeblendet)."""
@@ -1119,11 +1124,6 @@ class RemoteApp:
                         pass
             pos = max(0, min(pos, 14))
             return pos / 14, s, ticks
-        if metric == "snr":
-            # SNR 0..60 dB -> 0..1; Ticks alle 15 dB
-            v = max(0.0, min(status.snr, 60.0)) / 60.0
-            text = f"{status.snr:.0f} dB"
-            return v, text, ["0", "10", "20", "30", "40", "50", "60"]
         # Signalstaerke: RSSI 0..127 dBuV -> 0..1; Ticks alle 20 dB
         v = max(0.0, min(status.rssi, 127.0)) / 127.0
         return v, f"{status.rssi} dBµV", [str(t) for t in range(10, 128, 10)]
@@ -1206,17 +1206,12 @@ class RemoteApp:
                            text=f"{protocol.fmt_num(v, 2)} V",
                            font=("", 10, "bold"), fill="#333")
 
-    def _smeter_redraw(self):
-        """S-Meter neu zeichnen: analoges Zeigerinstrument im klassischen
-        Look mit hellem Zifferblatt, Skala ausserhalb des Halbkreises
-        beschriftet, rotem Uebersteuerungsbereich und Zeiger."""
+    def _meter_draw(self, canvas, value, text, ticks):
+        """Zeigerinstrument zeichnen: Skala ausserhalb des Halbkreises
+        beschriftet, rotem Uebersteuerungsbereich und Zeiger; ohne
+        Gehaeuserahmen, das Zifferblatt ist der weisse Canvas."""
         import math as _math
-        canvas = self.smeter_canvas
         canvas.delete("all")
-        status = self._last_status
-        value, text, ticks = 0.0, "–", []
-        if status is not None:
-            value, text, ticks = self._smeter_value(status)
         value = max(0.0, min(value, 1.0))
         w = self._SMETER_W
         h = self._SMETER_H
@@ -1230,10 +1225,6 @@ class RemoteApp:
             a = _math.radians(180 - angle_deg)
             return cx + radius * _math.cos(a), cy - radius * _math.sin(a)
 
-        # helles Zifferblatt im dunklen Gehaeuse, mit Blende als Rahmen
-        canvas.create_rectangle(4, 4, w - 4, h - 4,
-                                fill=self._SMETER_FACE,
-                                outline="#999", width=2)
 
         # roter Uebersteuerungsbereich am Skalenende als Bogenband
         a0 = self._SMETER_RED_FROM * arc
@@ -1277,6 +1268,24 @@ class RemoteApp:
                            font=("", 9, "bold"),
                            fill=self._SMETER_RED if value >= self._SMETER_RED_FROM
                            else self._SMETER_TXT)
+
+    def _smeter_redraw(self):
+        """S-Meter nach Metrikwahl (Signalstaerke oder S-Wert) zeichnen."""
+        status = self._last_status
+        value, text, ticks = 0.0, "–", []
+        if status is not None:
+            value, text, ticks = self._smeter_value(status)
+        self._meter_draw(self.smeter_canvas, value, text, ticks)
+
+    def _snr_redraw(self):
+        """SNR-Instrument: 0..60 dB, Ticks alle 10 dB."""
+        status = self._last_status
+        value, text, ticks = 0.0, "–", []
+        if status is not None:
+            value = max(0.0, min(status.snr, 60.0)) / 60.0
+            text = f"{status.snr:.0f} dB"
+            ticks = ["0", "10", "20", "30", "40", "50", "60"]
+        self._meter_draw(self.snr_canvas, value, text, ticks)
 
     def _set_row_values(self, status: protocol.ReceiverStatus):
         """Wertanzeige zwischen den ◀/▶-Buttons aktualisieren."""
@@ -1590,6 +1599,7 @@ class RemoteApp:
             self._set_row_values(status)
             self._squelch_eval(status)
             self._smeter_redraw()
+            self._snr_redraw()
             hz = status.display_frequency_hz()
             # Frequenzmarke im Spektrum nachziehen, wenn die Frequenz
             # geaendert wurde (ausserhalb des Sweeps, der selbst zeichnet).

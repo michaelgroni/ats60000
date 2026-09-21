@@ -37,7 +37,6 @@ DE = {
     # S-Meter
     "metric_rssi": "Signalstärke",
     "metric_s": "S-Wert",
-    "metric_snr": "SNR",
     # Speicher
     "memories": "Speicherplätze",
     "slot": "Slot:",
@@ -147,7 +146,6 @@ EN = {
     "squelch_sens": "Squelch",
     "metric_rssi": "Signal strength",
     "metric_s": "S-value",
-    "metric_snr": "SNR",
     "memories": "Memory slots",
     "slot": "Slot:",
     "save_current": "Save current station (#)",

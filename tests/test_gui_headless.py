@@ -308,6 +308,7 @@ class GuiSmokeTest(unittest.TestCase):
         application.client = type("C", (), {"is_connected": lambda self: False})()
         application.root.title = lambda *a, **kw: None
         application.smeter_canvas = FakeCanvas()
+        application.snr_canvas = FakeCanvas()
         application._last_status = None
         try:
             application.switch_language("English")
@@ -472,6 +473,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application.smeter_metric_var.value = "rssi"
         application.freq_display = FakeCanvas()
         application.batt_canvas = FakeCanvas()
+        application.snr_canvas = FakeCanvas()
         application.volume_var = FakeVar()
         application.sweep_points_var = FakeVar()
         application.sweep_progress_var = FakeVar()
@@ -568,7 +570,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         canvas = app.smeter_canvas
         faces = [rc for rc in canvas.rectangles
                  if rc[1].get("fill") == app._SMETER_FACE]
-        self.assertEqual(len(faces), 1)   # helles Zifferblatt
+        self.assertEqual(len(faces), 0)   # kein Rahmen/Blatt mehr
         reds = [pg for pg in canvas.polygons
                 if pg[1].get("fill") == app._SMETER_RED]
         self.assertEqual(len(reds), 1)   # rotes Uebersteuerungsband
@@ -646,10 +648,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         self.assertGreater(needle_pos, 8 / 14)   # rechts vom S9-Tick
         self.assertLess(needle_pos, 1.0)
         self.assertAlmostEqual(needle_pos, 10 / 14, delta=0.02)
-        # SNR-Metrik: Ticks 0..60 in 10er-Schritten, Text in dB
-        app.smeter_metric_var.value = "snr"
-        app._smeter_redraw()
-        texts = [t[1].get("text") for t in app.smeter_canvas.texts]
+        # SNR-Instrument: eigene Anzeige mit Ticks 0..60, Text in dB
+        app._snr_redraw()
+        texts = [t[1].get("text") for t in app.snr_canvas.texts]
         self.assertIn("30 dB", texts)
         for tick in ("0", "10", "20", "30", "40", "50", "60"):
             self.assertIn(tick, texts)
