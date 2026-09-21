@@ -8,6 +8,8 @@ geflasht** werden.
 Geschrieben in Python, nur Standardbibliothek (Tkinter für die Oberfläche) –
 keine Zusatzpakete nötig.
 
+![Programmfenster der ATS-Mini WLAN-Fernbedienung](screenshot.png)
+
 ## Voraussetzungen
 
 * Python 3.10 oder neuer (mit Tkinter; unter Debian/Ubuntu: `python3-tk`)
