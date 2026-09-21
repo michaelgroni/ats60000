@@ -88,6 +88,9 @@ class FakeFrame(FakeWidget):
     def minsize(self, *a, **kw):
         pass
 
+    def geometry(self, *a, **kw):
+        pass
+
     def bind_all(self, *a, **kw):
         pass
 

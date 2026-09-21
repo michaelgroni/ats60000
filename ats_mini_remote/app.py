@@ -151,11 +151,12 @@ class RemoteApp:
         self._scroll.configure(yscrollcommand=self._scrollbar.set)
         self._build_content()
         self.root.update_idletasks()
-        # Natuerliche Fensterbreite als Minimum: beim Zusammenschieben
-        # bleibt der Inhalt sichtbar (bei wenig Hoehe rollbar),
-        # groesser ziehen laesst sich das Fenster frei
-        root_width = self._scroll.bbox("all")[2]
-        self.root.minsize(root_width + 24, 200)
+        # Natuerliche Groesse des Inhalts: Das Fenster startet so,
+        # dass alles ohne Scrollen sichtbar ist; Breite und Hoehe
+        # sind zugleich das Minimum, kleiner gezogen wird gerollt
+        box = self._scroll.bbox("all")
+        self.root.minsize(box[2] + 24, 200)
+        self.root.geometry(f"{box[2] + 24}x{box[3] + 4}")
         # Mausrad steuert das Scroll-Canvas
         self.root.bind_all("<MouseWheel>", self._on_mousewheel)
 

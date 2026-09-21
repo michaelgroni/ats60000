@@ -35,7 +35,7 @@ DE = {
     "agc_on": "AGC ein",
     "squelch_sens": "Rauschsperre",
     # S-Meter
-    "metric_rssi": "Signalstärke",
+    "metric_rssi": "Pegel",
     "metric_s": "S-Wert",
     # Speicher
     "memories": "Speicherplätze",
@@ -144,7 +144,7 @@ EN = {
     "agc_attn": "AGC/Attn",
     "agc_on": "AGC on",
     "squelch_sens": "Squelch",
-    "metric_rssi": "Signal strength",
+    "metric_rssi": "Level",
     "metric_s": "S-value",
     "memories": "Memory slots",
     "slot": "Slot:",
