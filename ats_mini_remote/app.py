@@ -183,6 +183,11 @@ class RemoteApp:
         meter.grid(row=0, column=1, sticky="ne",
                    padx=(16, 10), pady=4)
         self.smeter_metric_var = tk.StringVar(value="rssi")
+        self.smeter_canvas = tk.Canvas(meter, width=self._SMETER_W,
+                                       height=self._SMETER_H,
+                                       bg=self._SMETER_FACE,
+                                       highlightthickness=0)
+        self.smeter_canvas.grid(row=0, column=0, sticky="w")
         for i, (key, val) in enumerate((("metric_rssi", "rssi"),
                                         ("metric_s", "s"),
                                         ("metric_snr", "snr"))):
@@ -191,13 +196,8 @@ class RemoteApp:
                                     command=self._smeter_redraw,
                                     bg="#ffffff",
                                     activebackground="#ffffff"),
-                     key).grid(row=0, column=i, sticky="w", padx=2)
-        self.smeter_canvas = tk.Canvas(meter, width=self._SMETER_W,
-                                       height=self._SMETER_H,
-                                       bg=self._SMETER_FACE,
-                                       highlightthickness=0)
-        self.smeter_canvas.grid(row=1, column=0, columnspan=3,
-                               sticky="we", pady=(4, 2))
+                     key).grid(row=i, column=1, sticky="w",
+                                padx=(6, 0), pady=1)
         status.columnconfigure(1, weight=1)
 
         # Steuerung
@@ -1125,7 +1125,7 @@ class RemoteApp:
         v = max(0.0, min(status.rssi, 127.0)) / 127.0
         return v, f"{status.rssi} dBµV", [str(t) for t in range(10, 128, 10)]
 
-    _7SEG_ON = "#d00"       # leuchtende Segmente (rote LED)
+    _7SEG_ON = "#000"       # leuchtende Segmente (schwarz)
     _7SEG_W = 20             # Ziffernbreite
     _7SEG_H = 38             # Ziffernhoehe
     _7SEG_T = 4              # Segmentstaerke
@@ -1178,10 +1178,11 @@ class RemoteApp:
                         fill=self._7SEG_ON, outline="")
                 x += w + self._7SEG_GAP
             elif ch in ",.":
-                canvas.create_rectangle(x - 1, h + 2 * t + 3, x + 3,
-                                        h + 2 * t + 7,
-                                        fill=self._7SEG_ON, outline="")
-                x += 4 + self._7SEG_GAP
+                dx = x - self._7SEG_GAP
+                y1 = t + h
+                canvas.create_oval(dx + 1, y1 - 3, dx + 6, y1 + 2,
+                                   fill=self._7SEG_ON, outline="")
+                x += self._7SEG_GAP
         canvas.create_text(x + 4, t + h // 2, anchor="w", text=unit,
                            font=("", 10, "bold"), fill="#333")
 
