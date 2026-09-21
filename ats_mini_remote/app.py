@@ -1285,7 +1285,8 @@ class RemoteApp:
         v = status.voltage if status is not None else 0.0
         canvas.create_rectangle(4, 5, 44, 21, outline="#333", width=2)
         canvas.create_rectangle(44, 9, 48, 17, fill="#333", outline="")
-        frac = max(0.0, min(1.0, (v - 3.0) / 1.2))
+        # Balken bleibt voll bis 3,9 V und schrumpft erst darunter
+        frac = max(0.0, min(1.0, (v - 3.0) / 0.9))
         color = ("#2a2" if v >= 3.7
                  else "#c80" if v >= 3.4 else "#c00")
         if frac > 0:
