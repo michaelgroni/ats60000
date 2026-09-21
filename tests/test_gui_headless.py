@@ -814,34 +814,34 @@ class SpectrumMarkerTest(unittest.TestCase):
     def test_freq_display_long_frequency_fits_into_canvas(self):
         app = self._make_app()
         from ats_mini_remote import protocol
-        # 30000,000 kHz im KW-Band ist breiter als die 240-px-Canvas,
-        # wenn die Segmentgroesse nicht mitskaliert werden wuerde
+        # 30000,000 kHz im KW-Band: die laengste moegliche Anzeige muss
+        # mit der festen Segmentgroesse in die 240-px-Canvas passen
         app.freq_display.width = 240
         app._freq_redraw(protocol.ReceiverStatus(
             frequency=30_000, mode="AM", band="SW"))
         self.assertGreater(len(app.freq_display.polygons), 7)
         canvas_w = app.freq_display.width
         for args, _kw in app.freq_display.polygons:
-            xs = [p for point in args for p in point][0::2]
+            xs = [pt[0] for pt in args]
             self.assertLessEqual(max(xs), canvas_w,
                                  "Siebensegmentanzeige ragt ueber den Rand")
         text_args = app.freq_display.texts[0][0]
         self.assertLessEqual(text_args[0], canvas_w)
         self.assertIn("kHz", [t[1].get("text") for t in app.freq_display.texts])
 
-    def test_freq_display_short_frequency_uses_full_size(self):
+    def test_freq_display_uses_fixed_segment_size(self):
         app = self._make_app()
         from ats_mini_remote import protocol
-        # FM: kurze Anzeige "107,9" braucht keine Verkleinerung
+        # kurze und lange Anzeige verwenden dieselbe (feste) Geometrie
         app.freq_display.width = 240
         app._freq_redraw(protocol.ReceiverStatus(
-            frequency=10_790, mode="FM", band="VHF"))
-        widths = set()
-        for args, _kw in app.freq_display.polygons:
-            xs = [pt[0] for pt in args]
-            widths.add(max(xs) - min(xs))
-        self.assertIn(app._7SEG_W, widths)
-        self.assertIn("MHz", [t[1].get("text") for t in app.freq_display.texts])
+            frequency=3_600, mode="AM", band="80M"))
+        short_geometry = {tuple(a) for a, _kw in app.freq_display.polygons}
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=30_000, mode="AM", band="SW"))
+        long_geometry = {tuple(a) for a, _kw in app.freq_display.polygons}
+        self.assertTrue(short_geometry & long_geometry,
+                         "Segmentgeometrie weicht zwischen kurz und lang ab")
 
     def test_battery_display_draws_symbol_and_voltage(self):
         app = self._make_app()

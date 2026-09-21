@@ -1223,11 +1223,10 @@ class RemoteApp:
         return v, f"{status.rssi} dBµV", [str(t) for t in range(10, 128, 10)]
 
     _7SEG_ON = "#000"       # leuchtende Segmente (schwarz)
-    _7SEG_W = 20             # Ziffernbreite
-    _7SEG_H = 38             # Ziffernhoehe
-    _7SEG_T = 4              # Segmentstaerke
-    _7SEG_GAP = 12           # Abstand zwischen Ziffern
-    _7SEG_UNIT_W = 34        # Platzbedarf der Einheit am rechten Rand
+    _7SEG_W = 15             # Ziffernbreite
+    _7SEG_H = 28             # Ziffernhoehe
+    _7SEG_T = 3              # Segmentstaerke
+    _7SEG_GAP = 8            # Abstand zwischen Ziffern
     _7SEG_MAP = {
         "0": "abcdef", "1": "bc", "2": "abdeg", "3": "abcdg",
         "4": "bcfg", "5": "acdfg", "6": "acdefg", "7": "abc",
@@ -1264,28 +1263,12 @@ class RemoteApp:
         else:
             text = protocol.fmt_num(hz / 1e3, 3)
             unit = "kHz"
+        # Feste, kompakte Segmentgroesse: auch die laengste Anzeige
+        # (30000,000 kHz im KW-Band) passt in die 240-px-Canvas.
         w = self._7SEG_W
         h = self._7SEG_H
         t = self._7SEG_T
         gap = self._7SEG_GAP
-        # Lange Frequenzen (z. B. 30000,000 kHz im KW-Band) wuerden bei
-        # fester Segmentgroesse ueber den rechten Rand ragen. Die ganze
-        # Anzeige wird deshalb so weit verkleinert, dass Ziffern und
-        # Einheit sicher in die Canvas-Breite passen.
-        digits = sum(1 for ch in text if ch.isdigit())
-        seps = sum(1 for ch in text if ch in ",.")
-        avail = canvas.winfo_width()
-        if avail < 2:
-            avail = self.freq_display.winfo_reqwidth()
-        avail -= 2
-        needed = (t + 1) + digits * w + (digits - 1 + seps) * gap \
-            + self._7SEG_UNIT_W
-        scale = min(1.0, avail / needed)
-        w = max(4, int(w * scale))
-        h = max(8, int(h * scale))
-        t = max(2, int(t * scale))
-        gap = max(1, int(gap * scale))
-        unit_font = max(6, int(10 * scale))
         x = t + 1
         for ch in text:
             if ch.isdigit():
@@ -1301,7 +1284,7 @@ class RemoteApp:
                                    fill=self._7SEG_ON, outline="")
                 x += gap
         canvas.create_text(x + 3, t + h // 2, anchor="w", text=unit,
-                           font=("", unit_font, "bold"), fill="#333")
+                           font=("", 10, "bold"), fill="#333")
 
     def _battery_redraw(self, status):
         """Batteriesymbol wie bei einem Handy plus Spannung als Zahl."""
