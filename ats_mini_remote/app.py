@@ -1140,10 +1140,12 @@ class RemoteApp:
 
     def _sweep_click(self, event):
         """Klick im Diagramm: zur angeklickten Frequenz tunen."""
-        data = self._sweep_data
-        if not data or self._sweep_freq_range is None:
+        # Auch ohne vorherigen Sweep tunen: der Bereich ergibt sich
+        # dann aus dem aktuellen Band (wie fuer die Achsenbeschriftung)
+        rng = self._sweep_range_or_band()
+        if rng is None:
             return
-        lo, hi = self._sweep_freq_range
+        lo, hi = rng
         span = max(hi - lo, 1)
         canvas = self.sweep_canvas
         cw = max(canvas.winfo_width(), 100)

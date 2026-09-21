@@ -954,6 +954,53 @@ class SpectrumMarkerTest(unittest.TestCase):
         hz = int(cmd[1:]) * 1000
         self.assertEqual(hz % 5000, 0, cmd)
 
+    def test_click_tunes_without_prior_sweep(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        # kein Sweep bisher: weder Daten noch Bereich gesetzt
+        app._sweep_data = None
+        app._sweep_freq_range = None
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M", step="5k")
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+        app.log = lambda msg: None
+        class Ev:
+            x = 150
+        app._sweep_click(Ev())
+        self.assertEqual(len(sent), 1, "Klick ohne Sweep hat nicht getunt")
+        cmd = sent[0].decode("latin1")
+        hz = int(cmd[1:])
+        self.assertGreater(hz, 0)
+        self.assertEqual(hz % 5000, 0, cmd)
+
+    def test_click_tunes_within_band_range(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._sweep_data = None
+        app._sweep_freq_range = None
+        app._last_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M", step="1k")
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+        app.log = lambda msg: None
+        rng = protocol.sweep_points_for_band(
+            "80M", "AM", 3_600_000)
+        lo, hi = int(rng[0]) * 1000, int(rng[1]) * 1000
+        # Klick am linken und rechten Rand des Plotbereichs
+        # (Canvas 300 px, Padding links 32 / rechts 46): Ergebnis
+        # bleibt innerhalb der Bandgrenzen
+        for x in (33, 253):
+            class Ev:
+                pass
+            Ev.x = x
+            app._sweep_click(Ev())
+        self.assertEqual(len(sent), 2)
+        for cmd in sent:
+            hz = int(cmd.decode("latin1")[1:])
+            self.assertGreaterEqual(hz, lo, cmd)
+            self.assertLessEqual(hz, hi, cmd)
+
     def test_incremental_draw_during_sweep(self):
         app = self._make_app()
         # 3 Punkte geplant, Reihenfolge wie beim Sweep von links nach rechts
