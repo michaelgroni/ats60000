@@ -204,7 +204,6 @@ class RemoteApp:
                                    bg="#ffffff",
                                    activebackground="#ffffff"),
                      key).pack(anchor="w", pady=1)
-        status.columnconfigure(1, weight=1)
 
         # Steuerung und Speicherplaetze nebeneinander
         ctrl_mem = ttk.Frame(outer)
