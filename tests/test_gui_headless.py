@@ -82,6 +82,18 @@ class FakeFrame(FakeWidget):
     def title(self, *a, **kw):
         pass
 
+    def update_idletasks(self):
+        pass
+
+    def minsize(self, *a, **kw):
+        pass
+
+    def bind_all(self, *a, **kw):
+        pass
+
+    def unbind_all(self, *a, **kw):
+        pass
+
 
 def make_tkinter_mock():
     mod = types.ModuleType("tkinter")
@@ -120,7 +132,7 @@ def make_tkinter_mock():
             self.config_calls.append((index, kw))
 
     mod.Menu = FakeMenu
-    mod.Canvas = FakeWidget
+    mod.Canvas = FakeScrollCanvas
     mod.Radiobutton = FakeWidget
     mod.NORMAL = "normal"
     mod.DISABLED = "disabled"
@@ -334,6 +346,28 @@ class GuiSmokeTest(unittest.TestCase):
         self.assertTrue(version)
         # Release '0.1' oder Dev-Kennung '0.1-<n>-g<hash>' oder Fallback
         self.assertRegex(version, r"^\d+\.\d+(-\d+-g[0-9a-f]+)?$")
+
+
+class FakeScrollCanvas(FakeWidget):
+    """Scroll-Canvas: keine echte Geometrie, nur Aufrufe protokollieren."""
+
+    def create_window(self, *a, **kw):
+        return 1
+
+    def itemconfigure(self, *a, **kw):
+        pass
+
+    def bbox(self, *a, **kw):
+        return (0, 0, 700, 500)
+
+    def yview(self, *a, **kw):
+        pass
+
+    def yview_scroll(self, *a, **kw):
+        pass
+
+    def configure(self, **kw):
+        self.config(**kw)
 
 
 class FakeCanvas:

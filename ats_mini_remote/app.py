@@ -127,11 +127,6 @@ class RemoteApp:
         self._sweep_axes_band: str = ""
 
         self._build_ui()
-        # Natuerliche Fensterbreite als Minimum: beim Zusammenschieben
-        # bleibt der Inhalt vollstaendig sichtbar, groesser ziehen
-        # laesst sich das Fenster frei (Spektrum und Instrumente wachsen)
-        root.update_idletasks()
-        root.minsize(root.winfo_reqwidth(), 520)
         root.after(50, self._poll_main_thread)
 
     # ----------------------------------------------------------- Oberfläche
@@ -145,10 +140,49 @@ class RemoteApp:
         return widget
 
     def _build_ui(self):
-        pad = {"padx": 6, "pady": 3}
         self._build_menu()
-        outer = ttk.Frame(self.root)
-        outer.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        # Hauptbereich rollbar: bei kleiner Fensterhoehe verschwindet
+        # der Inhalt sonst unten und ist unerreichbar
+        self._scroll = tk.Canvas(self.root, highlightthickness=0)
+        self._scroll.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._scrollbar = ttk.Scrollbar(
+            self.root, orient=tk.VERTICAL, command=self._scroll.yview)
+        self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._scroll.configure(yscrollcommand=self._scrollbar.set)
+        self._build_content()
+        self.root.update_idletasks()
+        # Natuerliche Fensterbreite als Minimum: beim Zusammenschieben
+        # bleibt der Inhalt sichtbar (bei wenig Hoehe rollbar),
+        # groesser ziehen laesst sich das Fenster frei
+        root_width = self._scroll.bbox("all")[2]
+        self.root.minsize(root_width + 24, 200)
+        # Mausrad steuert das Scroll-Canvas
+        self.root.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        self._scroll.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _build_content(self):
+        pad = {"padx": 6, "pady": 3}
+        # innerer Rahmen mit dem gesamten Fensterinhalt; er waechst
+        # nach unten unbegrenzt und wird ueber das Scroll-Canvas
+        # sichtbar gemacht
+        outer = ttk.Frame(self._scroll)
+        self._outer_id = self._scroll.create_window((0, 0), window=outer,
+                                                    anchor="nw")
+        outer.bind(
+            "<Configure>",
+            lambda _e: self._scroll.configure(
+                scrollregion=self._scroll.bbox("all")))
+        self._scroll.bind(
+            "<Configure>",
+            lambda e: self._scroll.itemconfigure(
+                self._outer_id, width=e.width))
+        for widget in (self._scroll, outer):
+            widget.bind("<Enter>", lambda _e: widget.bind_all(
+                "<MouseWheel>", self._on_mousewheel))
+            widget.bind("<Leave>", lambda _e: widget.unbind_all(
+                "<MouseWheel>"))
 
         # Verbindungsleiste
         conn = ttk.LabelFrame(outer, text=self._t("connection"))
@@ -179,7 +213,7 @@ class RemoteApp:
         self.freq_display.grid(row=0, column=0, sticky="w")
         self.batt_canvas = tk.Canvas(left, width=120, height=26,
                                      bg="#ffffff", highlightthickness=0)
-        self.batt_canvas.grid(row=1, column=0, sticky="w", pady=(2, 4))
+        self.batt_canvas.grid(row=1, column=0, pady=(2, 4))
 
         # Instrumente rechts im Empfaenger-Bereich: SNR-Meter links,
         # S-Meter rechts (umschaltbar zwischen Signalstaerke und S-Wert)
@@ -1210,6 +1244,8 @@ class RemoteApp:
         if frac > 0:
             canvas.create_rectangle(6, 7, 6 + int(36 * frac), 19,
                                     fill=color, outline="")
+        # Spannung rechts neben dem Symbol; Symbol+Text gemeinsam
+        # mittig unter der Frequenzanzeige
         canvas.create_text(56, 13, anchor="w",
                            text=f"{protocol.fmt_num(v, 2)} V",
                            font=("", 10, "bold"), fill="#333")
