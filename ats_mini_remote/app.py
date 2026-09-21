@@ -243,8 +243,12 @@ class RemoteApp:
                     variable=self.squelch_sens_var,
                     command=self.on_squelch_sens_changed,
                     state=tk.DISABLED)
-                self.squelch_sens_scale.grid(row=row, column=1, columnspan=3,
+                self.squelch_sens_scale.grid(row=row, column=1, columnspan=2,
                                              sticky="we", padx=2, pady=6)
+                self.squelch_var = tk.BooleanVar(value=False)
+                ttk.Checkbutton(ctrl, variable=self.squelch_var,
+                                command=self.toggle_squelch).grid(
+                    row=row, column=3, sticky="w", padx=2, pady=6)
                 continue
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
@@ -259,13 +263,6 @@ class RemoteApp:
                       font=("", 9, "bold")).grid(row=row, column=2, sticky="w", padx=8)
             ttk.Button(ctrl, text="▶", width=3,
                        command=up_cmd).grid(row=row, column=3, sticky="w")
-
-        self.squelch_var = tk.BooleanVar(value=False)
-        self._tr(ttk.Checkbutton(ctrl, text=self._t("squelch"),
-                                 variable=self.squelch_var,
-                                 command=self.toggle_squelch),
-                 "squelch").grid(row=row, column=1, columnspan=2,
-                                 sticky="w", padx=2, pady=(2, 0))
 
         # Quasianaloges S-Meter rechts neben den Steuerelementen;
 # Metrik per Radiobutton: RSSI, S-Wert oder SNR
@@ -1506,6 +1503,14 @@ class RemoteApp:
             # zieht und die Rauschsperre nicht gerade stummschaltet
             if not self._volume_dragging and not self._squelch_muted:
                 self.volume_var.set(status.volume)
+                # Ziel-Lautstaerke mitfuehren: die Rauschsperre braucht ihn
+                # zum Zurückschalten; ohne Slider-Bewegung waere er sonst 0
+                if status.volume > 0:
+                    self._volume_target = status.volume
+                # Ziel-Lautstaerke mitfuehren: die Rauschsperre braucht ihn
+                # zum Zurückschalten; ohne Slider-Bewegung waere er sonst 0
+                if status.volume > 0:
+                    self._volume_target = status.volume
             hz = status.display_frequency_hz()
             if status.mode.upper() == "FM":
                 self.freq_var.set(f"{protocol.fmt_num(hz / 1e6, 2)} MHz")
