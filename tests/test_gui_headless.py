@@ -49,6 +49,9 @@ class FakeWidget:
             self.config_kwargs = {}
         self.config_kwargs.update(kw)
 
+    def configure(self, **kw):
+        self.config(**kw)
+
     def pack(self, **kw):
         self.pack_kwargs = dict(kw)
         self._register_manager("pack")
@@ -197,6 +200,7 @@ class GuiSmokeTest(unittest.TestCase):
         application._screenshot = None
         application._lang_var = FakeVar()
         application._i18n_labels = []
+        application._squelch_sens = 5
         application._build_ui()
         # Kein Exception -> Aufbau ok
         self.assertTrue(True)
@@ -217,6 +221,7 @@ class GuiSmokeTest(unittest.TestCase):
         application._screenshot = None
         application._lang_var = FakeVar()
         application._i18n_labels = []
+        application._squelch_sens = 5
         application._build_ui()
 
         # Menueleiste: Ansicht und Hilfe mit den besprochenen Eintraegen
@@ -297,6 +302,7 @@ class GuiSmokeTest(unittest.TestCase):
         application._screenshot = None
         application._lang_var = FakeVar()
         application._i18n_labels = []
+        application._squelch_sens = 5
         application._build_ui()
         application.client = type("C", (), {"is_connected": lambda self: False})()
         application.root.title = lambda *a, **kw: None
@@ -436,6 +442,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._volume_dragging = False
         application._squelch_enabled = False
         application._squelch_muted = False
+        application._squelch_sens = 5
+        application._squelch_sens_state = "disabled"
+        application.squelch_sens_scale = FakeWidget(None)
         application._sweep_active = False
         application._sweep_points_pending = False
         application._sweep_points_band = "80M"
@@ -708,6 +717,50 @@ class SpectrumMarkerTest(unittest.TestCase):
             frequency=3_600, mode="AM", band="80M",
             rssi=rssi, snr=snr, volume=30)
 
+    def test_squelch_sensitivity_shifts_threshold(self):
+        app = self._make_app()
+        app._squelch_enabled = True
+        app._volume_target = 30
+        app._current_volume = 30
+        sent = []
+        app.send = lambda cmd: sent.append(cmd)
+        # Empfindlichkeit 10 (maximal): Oeffnungsschwelle AM sinkt auf 10
+        app._squelch_sens = 10
+        app._squelch_eval(self._status_rssi(12, 15))
+        self.assertFalse(app._squelch_muted)   # Sperre bleibt offen
+        # Empfindlichkeit 0 (minimal): Oeffnungsschwelle AM steigt auf 20
+        app._squelch_sens = 0
+        app._squelch_eval(self._status_rssi(12, 15))
+        self.assertTrue(app._squelch_muted)     # jetzt wird gestummt
+
+    def test_squelch_sens_callback_clamps(self):
+        app = self._make_app()
+        app.on_squelch_sens_changed("7.0")
+        self.assertEqual(app._squelch_sens, 7)
+        app.on_squelch_sens_changed("99")
+        self.assertEqual(app._squelch_sens, 10)
+        app.on_squelch_sens_changed("-3")
+        self.assertEqual(app._squelch_sens, 0)
+
+    def test_squelch_sens_slider_state_follows_mode(self):
+        from ats_mini_remote import protocol
+        app = self._make_app()
+        app._volume_dragging = True   # Slider-Update im Poll abschalten
+        # AM: Slider bedienbar
+        app._pending_status = self._status_rssi(20, 15)
+        app._poll_main_thread()
+        self.assertEqual(app.squelch_sens_scale.config_kwargs.get("state"),
+                         "normal")
+        self.assertEqual(app._squelch_sens_state, "normal")
+        # SSB: Slider ausgegraut
+        app.squelch_sens_scale.config_kwargs.clear()
+        app._pending_status = protocol.ReceiverStatus(
+            frequency=3_600, mode="LSB", band="80M")
+        app._poll_main_thread()
+        self.assertEqual(app.squelch_sens_scale.config_kwargs.get("state"),
+                         "disabled")
+        self.assertEqual(app._squelch_sens_state, "disabled")
+
     def test_click_snaps_to_step(self):
         from ats_mini_remote import protocol
         app = self._make_app()
@@ -869,6 +922,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._screenshot = None
         application._lang_var = FakeVar()
         application._i18n_labels = []
+        application._squelch_sens = 5
         application._build_ui()
         # Canvas-Hintergrund ist ab Programmstart die Zifferblattfarbe
         self.assertEqual(application.smeter_canvas.kwargs.get("bg"),

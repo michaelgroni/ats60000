@@ -115,6 +115,8 @@ class RemoteApp:
         self._memory_refresh_id: str | None = None
         self._squelch_enabled = False
         self._squelch_muted = False
+        self._squelch_sens = 5
+        self._squelch_sens_state = "disabled"
         self._sweep_active = False
         self._sweep_freqs: list[int] = []
         self._sweep_index = 0
@@ -216,6 +218,7 @@ class RemoteApp:
             ("frequency", None, None),
             ("step_size", protocol.CMD_STEP_UP, protocol.CMD_STEP_DOWN),
             ("volume", None, None),
+            ("squelch_sens", None, None),
             ("band", protocol.CMD_BAND_UP, protocol.CMD_BAND_DOWN),
             ("mode", protocol.CMD_MODE_UP, protocol.CMD_MODE_DOWN),
             ("bandwidth", protocol.CMD_BANDWIDTH_UP, protocol.CMD_BANDWIDTH_DOWN),
@@ -230,6 +233,18 @@ class RemoteApp:
                     row=row, column=0, sticky="w", padx=4)
                 self.volume_scale.grid(row=row, column=1, columnspan=3,
                                        sticky="we", padx=2, pady=6)
+                continue
+            elif label == "squelch_sens":
+                self._tr(ttk.Label(ctrl, text=self._t(label), width=14),
+                         label).grid(row=row, column=0, sticky="w", padx=4)
+                self.squelch_sens_var = tk.IntVar(value=self._squelch_sens)
+                self.squelch_sens_scale = ttk.Scale(
+                    ctrl, from_=0, to=10,
+                    variable=self.squelch_sens_var,
+                    command=self.on_squelch_sens_changed,
+                    state=tk.DISABLED)
+                self.squelch_sens_scale.grid(row=row, column=1, columnspan=3,
+                                             sticky="we", padx=2, pady=6)
                 continue
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
@@ -1261,6 +1276,10 @@ class RemoteApp:
         if burst:
             self.send(burst)
 
+    def on_squelch_sens_changed(self, value: str):
+        """Empfindlichkeit der Rauschsperre (0..10) aus dem Regler."""
+        self._squelch_sens = max(0, min(10, int(float(value))))
+
     def toggle_squelch(self):
         """Rauschsperre ein-/ausschalten."""
         self._squelch_enabled = bool(self.squelch_var.get())
@@ -1295,7 +1314,10 @@ class RemoteApp:
             if self._squelch_muted:
                 self._squelch_unmute()
             return
-        open_rssi = 15 if mode == "AM" else 20
+        # Empfindlichkeit (0..10, Standard 5) verschiebt die
+        # Oeffnungsschwelle um bis zu +-5 dB
+        sens = max(0, min(10, getattr(self, "_squelch_sens", 5)))
+        open_rssi = (15 if mode == "AM" else 20) - (sens - 5)
         close_rssi = open_rssi - 5
         open_snr = 10
         close_snr = 7
@@ -1473,6 +1495,12 @@ class RemoteApp:
             self._pending_status = None
             self._last_status = status
             self._current_mode = status.mode
+            # Empfindlichkeits-Regler der Rauschsperre nur bei AM/FM
+            sens_state = ("normal" if status.mode.upper() in ("AM", "FM")
+                          else "disabled")
+            if sens_state != self._squelch_sens_state:
+                self._squelch_sens_state = sens_state
+                self.squelch_sens_scale.configure(state=sens_state)
             self._current_volume = status.volume
             # Regler nur aktualisieren, wenn der Nutzer ihn nicht gerade
             # zieht und die Rauschsperre nicht gerade stummschaltet
