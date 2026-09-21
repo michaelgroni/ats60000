@@ -13,7 +13,8 @@ important buttons are: *Verbinden* (connect), *Trennen* (disconnect),
 
 1. Open the program page on GitHub:
    [github.com/michaelgroni/ats60000/releases](https://github.com/michaelgroni/ats60000/releases)
-2. Under **v0.1**, download the file **ATS-Mini-Remote.exe**
+2. Under the latest release (e.g. **v0.2**), download the file
+   **ATS-Mini-Remote-0.2.exe**
    (for example into your *Downloads* folder).
 3. That's it. The file does not need to be unzipped and nothing needs to
    be installed. Keep it in a permanent place, for example on your
@@ -38,7 +39,7 @@ switched on:
 
 ## Connecting
 
-1. Start the downloaded file **ATS-Mini-Remote.exe** with a double
+1. Start the downloaded file (e.g. **ATS-Mini-Remote-0.2.exe**) with a double
    click.
 2. In the **Host** field, enter the radio's address. This is usually
    `atsmini.local`. Alternatively, the address (a number like

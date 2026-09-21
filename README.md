@@ -31,7 +31,7 @@ Das Radio lauscht dann auf TCP-Port **60000** – im WLAN unter
 
 Das neueste Release auf der
 [Release-Seite](https://github.com/michaelgroni/ats60000/releases)
-herunterladen: `ATS-Mini-Remote.exe` ist eine einzelne, eigenständige
+herunterladen: Die EXE-Datei (z. B. `ATS-Mini-Remote-0.2.exe`) ist eine einzelne, eigenständige
 Datei – kein Python, keine Installation, keine Administratorrechte.
 Einfach speichern und per Doppelklick starten.
 
@@ -119,7 +119,8 @@ pip install pyinstaller
 pyinstaller ats-mini-remote.spec
 ```
 
-Ergebnis: `dist\ATS-Mini-Remote.exe`. Alternativ baut der
+Ergebnis: `dist\ATS-Mini-Remote.exe` (im Release wird die Datei in
+`ATS-Mini-Remote-<Version>.exe` umbenannt). Alternativ baut der
 GitHub-Workflow (`.github/workflows/release.yml`) die EXE automatisch
 und veröffentlicht sie als Release, wenn ein Versions-Tag (`v…`)
 gepusht wird:
