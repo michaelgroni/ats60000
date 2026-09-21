@@ -29,7 +29,7 @@ keine Zusatzpakete nötig.
 
 Das neueste Release auf der
 [Release-Seite](https://github.com/michaelgroni/ats60000/releases)
-herunterladen: Die EXE-Datei (z. B. `ATS-Mini-Remote-0.2.exe`) ist eine einzelne, eigenständige
+herunterladen: Die EXE-Datei (z. B. `ATS-Mini-Remote-0.3.exe`) ist eine einzelne, eigenständige
 Datei – kein Python, keine Installation, keine Administratorrechte.
 Einfach speichern und per Doppelklick starten.
 

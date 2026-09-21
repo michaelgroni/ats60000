@@ -15,7 +15,7 @@ important buttons are: *Verbinden* (connect), *Trennen* (disconnect),
    [github.com/michaelgroni/ats60000/releases](https://github.com/michaelgroni/ats60000/releases)
 2. On that page, in the **Latest** section (newest release), download
    the EXE file offered there -- in the example it is called
-   **ATS-Mini-Remote-0.2.exe**, with newer versions correspondingly
+   **ATS-Mini-Remote-0.3.exe**, with newer versions correspondingly
    **ATS-Mini-Remote-<version-number>.exe**
    (for example into your *Downloads* folder).
 3. That's it. The file does not need to be unzipped and nothing needs to
@@ -41,7 +41,7 @@ switched on:
 
 ## Connecting
 
-1. Start the downloaded file (e.g. **ATS-Mini-Remote-0.2.exe**) with a double
+1. Start the downloaded file (e.g. **ATS-Mini-Remote-0.3.exe**) with a double
    click.
 2. In the **Host** field, enter the radio's address. This is usually
    `atsmini.local`. Alternatively, the address (a number like

@@ -9,7 +9,7 @@ Kabel und ohne Installation. Sie brauchen keine Computerkenntnisse.
    [github.com/michaelgroni/ats60000/releases](https://github.com/michaelgroni/ats60000/releases)
 2. Laden Sie auf der Seite im Abschnitt **Latest** (neuestes Release)
    die dort angebotene EXE-Datei herunter -- im Beispiel heißt sie
-   **ATS-Mini-Remote-0.2.exe**, bei neueren Versionen entsprechend
+   **ATS-Mini-Remote-0.3.exe**, bei neueren Versionen entsprechend
    **ATS-Mini-Remote-<Versionsnummer>.exe**
    (z. B. in den Ordner *Downloads*).
 3. Fertig. Die Datei braucht nicht entpackt zu werden und es muss nichts
@@ -36,7 +36,7 @@ eingeschaltet haben:
 
 ## Verbindung herstellen
 
-1. Starten Sie die heruntergeladene Datei (z. B. **ATS-Mini-Remote-0.2.exe**) mit
+1. Starten Sie die heruntergeladene Datei (z. B. **ATS-Mini-Remote-0.3.exe**) mit
    Doppelklick.
 2. Bei **Host** tragen Sie die Adresse des Radios ein. Das ist meistens
    `atsmini.local`. Alternativ steht die Adresse (eine Zahl wie
