@@ -110,6 +110,7 @@ class RemoteApp:
         self._screenshot: protocol.Screenshot | None = None
         self._volume_target = 0
         self._row_value_vars: dict[str, tk.StringVar] = {}
+        self._i18n_labels: list = []
         self._lang_var = tk.StringVar(value=i18n.current() or "Deutsch")
         self._memory_refresh_id: str | None = None
         self._sweep_active = False
@@ -130,6 +131,11 @@ class RemoteApp:
     def _t(self, key: str, **kwargs) -> str:
         return i18n.get_translator()(key, **kwargs)
 
+    def _tr(self, widget, key: str):
+        """Statisches Textwidget registrieren: Sprachwechsel erneuert Text."""
+        self._i18n_labels.append((widget, key))
+        return widget
+
     def _build_ui(self):
         pad = {"padx": 6, "pady": 3}
         self._build_menu()
@@ -138,11 +144,14 @@ class RemoteApp:
 
         # Verbindungsleiste
         conn = ttk.LabelFrame(outer, text=self._t("connection"))
+        self._tr(conn, "connection")
         conn.pack(fill=tk.X, **pad)
-        ttk.Label(conn, text=self._t("host")).grid(row=0, column=0, sticky="w", padx=4, pady=4)
+        self._tr(ttk.Label(conn, text=self._t("host")), "host").grid(
+            row=0, column=0, sticky="w", padx=4, pady=4)
         self.host_var = tk.StringVar(value="atsmini.local")
         ttk.Entry(conn, textvariable=self.host_var, width=20).grid(row=0, column=1, padx=2)
-        ttk.Label(conn, text=self._t("port")).grid(row=0, column=2, sticky="w", padx=4)
+        self._tr(ttk.Label(conn, text=self._t("port")), "port").grid(
+            row=0, column=2, sticky="w", padx=4)
         self.port_var = tk.StringVar(value=str(protocol.DEFAULT_PORT))
         ttk.Entry(conn, textvariable=self.port_var, width=7).grid(row=0, column=3, padx=2)
         self.connect_button = ttk.Button(conn, text=self._t("connect"), command=self.connect)
@@ -152,6 +161,7 @@ class RemoteApp:
 
         # Status
         status = ttk.LabelFrame(outer, text=self._t("receiver"))
+        self._tr(status, "receiver")
         status.pack(fill=tk.X, **pad)
         self.freq_var = tk.StringVar(value="–")
         self.band_var = tk.StringVar(value="–")
@@ -169,16 +179,20 @@ class RemoteApp:
             ("snr", self.snr_var),
             ("battery", self.batt_var),
         ]):
-            ttk.Label(status, text=self._t(label), font=("", 8, "bold")).grid(
-                row=0, column=col, sticky="w", padx=8, pady=(6, 0))
+            self._tr(ttk.Label(status, text=self._t(label),
+                               font=("", 8, "bold")),
+                     label).grid(row=0, column=col, sticky="w",
+                                 padx=8, pady=(6, 0))
             ttk.Label(status, textvariable=var, font=("", 12, "bold")).grid(
                 row=1, column=col, sticky="w", padx=8, pady=(0, 6))
 
         # Steuerung
         ctrl = ttk.LabelFrame(outer, text=self._t("controls"))
+        self._tr(ctrl, "controls")
         ctrl.pack(fill=tk.X, **pad)
 
-        ttk.Label(ctrl, text=self._t("frequency")).grid(row=0, column=0, sticky="w", padx=4)
+        self._tr(ttk.Label(ctrl, text=self._t("frequency")),
+                 "frequency").grid(row=0, column=0, sticky="w", padx=4)
         self.freq_entry_var = tk.StringVar()
         ttk.Entry(ctrl, textvariable=self.freq_entry_var, width=14).grid(
             row=0, column=1, padx=2)
@@ -186,8 +200,8 @@ class RemoteApp:
         unit_box = ttk.Combobox(ctrl, textvariable=self.freq_unit_var,
                                 values=["kHz", "MHz"], width=5, state="readonly")
         unit_box.grid(row=0, column=2, padx=2)
-        ttk.Button(ctrl, text=self._t("set"), command=self.set_frequency).grid(
-            row=0, column=3, padx=4)
+        self._tr(ttk.Button(ctrl, text=self._t("set"), command=self.set_frequency),
+                 "set").grid(row=0, column=3, padx=4)
 
         self.volume_var = tk.IntVar(value=0)
         self._volume_dragging = False
@@ -210,7 +224,7 @@ class RemoteApp:
                 down_cmd = lambda _l=None: self.tune(-1)
                 up_cmd = lambda _l=None: self.tune(+1)
             elif label == "volume":
-                ttk.Label(ctrl, text=self._t(label), width=12).grid(
+                self._tr(ttk.Label(ctrl, text=self._t(label), width=12), label).grid(
                     row=row, column=0, sticky="w", padx=4)
                 self.volume_scale.grid(row=row, column=1, columnspan=3,
                                        sticky="we", padx=2, pady=6)
@@ -218,7 +232,7 @@ class RemoteApp:
             else:
                 down_cmd = (lambda c=down: lambda: self.send(c))()
                 up_cmd = (lambda c=up: lambda: self.send(c))()
-            ttk.Label(ctrl, text=self._t(label), width=12).grid(
+            self._tr(ttk.Label(ctrl, text=self._t(label), width=12), label).grid(
                 row=row, column=0, sticky="w", padx=4)
             ttk.Button(ctrl, text="◀", width=3,
                        command=down_cmd).grid(row=row, column=1, sticky="w", padx=2, pady=2)
@@ -234,14 +248,16 @@ class RemoteApp:
         meter = ttk.Frame(ctrl)
         meter.grid(row=1, column=4, rowspan=len(rows), sticky="nsew",
                    padx=(16, 4), pady=2)
-        self.smeter_metric_var = tk.StringVar(value=self._t("metric_rssi"))
-        for i, key in enumerate(("metric_rssi", "metric_s", "metric_snr")):
-            m = self._t(key)
-            ttk.Radiobutton(meter, text=m, value=m,
-                            variable=self.smeter_metric_var,
-                            command=self._smeter_redraw).grid(
-                row=0, column=i, sticky="w", padx=2)
-        self.smeter_canvas = tk.Canvas(meter, width=260, height=122,
+        self.smeter_metric_var = tk.StringVar(value="rssi")
+        for i, (key, val) in enumerate((("metric_rssi", "rssi"),
+                                        ("metric_s", "s"),
+                                        ("metric_snr", "snr"))):
+            self._tr(ttk.Radiobutton(meter, text=self._t(key), value=val,
+                                     variable=self.smeter_metric_var,
+                                     command=self._smeter_redraw),
+                     key).grid(row=0, column=i, sticky="w", padx=2)
+        self.smeter_canvas = tk.Canvas(meter, width=self._SMETER_W,
+                                       height=self._SMETER_H,
                                        bg=self._SMETER_FACE,
                                        highlightthickness=0)
         self.smeter_canvas.grid(row=1, column=0, columnspan=3,
@@ -250,35 +266,48 @@ class RemoteApp:
 
         # Speicher
         mem = ttk.LabelFrame(outer, text=self._t("memories"))
+        self._tr(mem, "memories")
         mem.pack(fill=tk.X, **pad)
-        ttk.Label(mem, text=self._t("slot")).grid(row=0, column=0, padx=4)
+        self._tr(ttk.Label(mem, text=self._t("slot")), "slot").grid(
+            row=0, column=0, padx=4)
         self.slot_var = tk.StringVar(value="1")
         slot_spin = ttk.Spinbox(mem, from_=1, to=32, textvariable=self.slot_var, width=4)
         slot_spin.grid(row=0, column=1)
-        ttk.Button(mem, text=self._t("save_current"),
-                   command=self.save_memory).grid(row=0, column=2, padx=4)
-        ttk.Button(mem, text=self._t("clear_slot"),
-                   command=self.clear_memory).grid(row=0, column=3, padx=4)
-        self.memory_tree = ttk.Treeview(mem, columns=("Slot", "Band", "Frequenz", "Modus"),
+        self._tr(ttk.Button(mem, text=self._t("save_current"),
+                            command=self.save_memory),
+                 "save_current").grid(row=0, column=2, padx=4)
+        self._tr(ttk.Button(mem, text=self._t("clear_slot"),
+                            command=self.clear_memory),
+                 "clear_slot").grid(row=0, column=3, padx=4)
+        self._memory_cols = (("slot", "col_slot", 50),
+                             ("band", "col_band", 80),
+                             ("freq", "col_frequency", 140),
+                             ("mode", "col_mode", 60))
+        self.memory_tree = ttk.Treeview(mem,
+                                        columns=[c[0] for c in self._memory_cols],
                                         show="headings", height=4)
-        for col_name, width in [("Slot", 50), ("Band", 80), ("Frequenz", 140), ("Modus", 60)]:
-            self.memory_tree.heading(col_name, text=col_name)
-            self.memory_tree.column(col_name, width=width)
+        for col, key, width in self._memory_cols:
+            self.memory_tree.heading(col, text=self._t(key))
+            self.memory_tree.column(col, width=width)
         self.memory_tree.grid(row=1, column=0, columnspan=4, sticky="we", padx=4, pady=4)
         mem.columnconfigure(0, weight=1)
 
         # Spektrum (Sweep)
         sweep = ttk.LabelFrame(outer, text=self._t("spectrum"))
+        self._tr(sweep, "spectrum")
         sweep.pack(fill=tk.X, **pad)
         self.sweep_points_var = tk.StringVar(value="60")
-        ttk.Label(sweep, text=self._t("points")).grid(row=0, column=0, padx=4, pady=2)
+        self._tr(ttk.Label(sweep, text=self._t("points")),
+                 "points").grid(row=0, column=0, padx=4, pady=2)
         ttk.Spinbox(sweep, from_=10, to=500, increment=10,
                     textvariable=self.sweep_points_var, width=6).grid(row=0, column=1)
         self.sweep_start_button = ttk.Button(sweep, text=self._t("sweep_start"),
                                              command=self.sweep_start)
+        self._tr(self.sweep_start_button, "sweep_start")
         self.sweep_start_button.grid(row=0, column=2, padx=6)
         self.sweep_stop_button = ttk.Button(sweep, text=self._t("sweep_stop"),
                                             command=self.sweep_stop, state=tk.DISABLED)
+        self._tr(self.sweep_stop_button, "sweep_stop")
         self.sweep_stop_button.grid(row=0, column=3, padx=4)
         self.sweep_progress_var = tk.StringVar(value="")
         ttk.Label(sweep, textvariable=self.sweep_progress_var).grid(
@@ -297,27 +326,44 @@ class RemoteApp:
 
         # Screenshot
         shot = ttk.LabelFrame(outer, text=self._t("display"))
+        self._tr(shot, "display")
         shot.pack(fill=tk.X, **pad)
-        ttk.Button(shot, text=self._t("screenshot"),
-                   command=self.take_screenshot).grid(row=0, column=0, padx=4, pady=2)
-        ttk.Button(shot, text=self._t("save_as"),
-                   command=self.save_screenshot).grid(row=0, column=1, padx=4)
+        self._tr(ttk.Button(shot, text=self._t("screenshot"),
+                            command=self.take_screenshot),
+                 "screenshot").grid(row=0, column=0, padx=4, pady=2)
+        self._tr(ttk.Button(shot, text=self._t("save_as"),
+                            command=self.save_screenshot),
+                 "save_as").grid(row=0, column=1, padx=4)
         self.shot_label = ttk.Label(shot, text=self._t("no_screenshot"))
         self.shot_label.grid(row=0, column=2, padx=8)
 
         # Log (per Menue Ansicht ein-/ausblendbar; Programmstart: aus):
         # Tabellenansicht mit Spaltenueberschriften und Rollbalken
         self.logbox = ttk.LabelFrame(outer, text=self._t("log"))
+        self._tr(self.logbox, "log")
         self._log_visible = False
-        columns = ("time", "source", "message")
-        self.log_tree = ttk.Treeview(self.logbox, columns=columns,
+        self._log_cols = (
+            ("time", "col_time", 62),
+            ("source", "col_source", 62),
+            ("kind", "col_kind", 70),
+            ("freq", "col_frequency", 92),
+            ("band", "col_band", 55),
+            ("mode", "col_mode", 46),
+            ("step", "col_step", 48),
+            ("bw", "col_bw", 56),
+            ("agc", "col_agc", 38),
+            ("vol", "col_vol", 44),
+            ("rssi", "col_rssi", 46),
+            ("snr", "col_snr", 42),
+            ("volt", "col_volt", 48),
+            ("msg", "col_message", 280),
+        )
+        self.log_tree = ttk.Treeview(self.logbox,
+                                     columns=[c[0] for c in self._log_cols],
                                      show="headings", height=8)
-        for col, text, width in (
-                ("time", self._t("col_time"), 70),
-                ("source", self._t("col_source"), 80),
-                ("message", self._t("col_message"), 520)):
-            self.log_tree.heading(col, text=text)
-            self.log_tree.column(col, width=width, stretch=(col == "message"))
+        for col, key, width in self._log_cols:
+            self.log_tree.heading(col, text=self._t(key))
+            self.log_tree.column(col, width=width, stretch=(col == "msg"))
         self.log_tree.tag_configure("raw", foreground="#b50")
         log_scroll = ttk.Scrollbar(self.logbox, orient=tk.VERTICAL,
                                    command=self.log_tree.yview)
@@ -362,6 +408,8 @@ class RemoteApp:
     def _apply_language(self):
         """Statische Widget-Texte auf die aktive Sprache umstellen."""
         t = self._t
+        for widget, key in self._i18n_labels:
+            widget.config(text=t(key))
         self.connect_button.config(
             text=t("disconnect") if self.client.is_connected() else t("connect"))
         self.state_label.config(
@@ -370,14 +418,14 @@ class RemoteApp:
         # Log-Menueetikett und Spaltenueberschriften
         self._view_menu.entryconfigure(
             0, label=t("hide_log" if self._log_visible else "show_log"))
-        for col, key in (("time", "col_time"),
-                         ("source", "col_source"),
-                         ("message", "col_message")):
+        for col, key, _w in self._log_cols:
             self.log_tree.heading(col, text=t(key))
-        self.logbox.config(text=t("log"))
+        for col, key, _w in self._memory_cols:
+            self.memory_tree.heading(col, text=t(key))
         self.shot_label.config(
             image="", text=t("no_screenshot")
             if getattr(self, "_shot_photo", None) is None else "")
+        self._smeter_redraw()
 
     def toggle_log(self):
         """Log-Anzeige ein-/ausblenden (Startzustand: ausgeblendet)."""
@@ -392,13 +440,40 @@ class RemoteApp:
                              else "show_log"))
 
     def _log_insert(self, source: str, message: str):
-        """Zeile in die Logtabelle einfuegen und auf 400 Zeilen begrenzen."""
+        """Zeile in die Logtabelle einfuegen und auf 400 Zeilen begrenzen.
+
+        Radio-Statuszeilen (CSV mit 15 Feldern) werden in ihre
+        Bestandteile zerlegt; alles andere erscheint in der Spalte
+        Nachricht, unformatierte Zeilen zusaetzlich farbig markiert.
+        """
         import time as _time
         stamp = _time.strftime("%H:%M:%S")
         src = self._t("log_source_app" if source == "app" else "log_source_radio")
         tags = ("raw",) if self._log_line_is_raw(message) else ()
-        item = self.log_tree.insert("", tk.END, values=(stamp, src, message),
-                                   tags=tags)
+        values: tuple = (stamp, src) + ("",) * 11 + (message,)
+        if source == "radio":
+            status = protocol.parse_status(message)
+            if status is not None:
+                tags = ()
+                hz = status.display_frequency_hz()
+                if status.mode.upper() == "FM":
+                    freq = f"{protocol.fmt_num(hz / 1e6, 2)} MHz"
+                else:
+                    freq = f"{protocol.fmt_num(hz / 1e3, 3)} kHz"
+                values = (stamp, src,
+                          self._t("log_kind_status"),
+                          freq,
+                          status.band,
+                          status.mode,
+                          status.step,
+                          status.bandwidth,
+                          str(status.agc),
+                          str(status.volume),
+                          f"{status.rssi} dBµV",
+                          f"{status.snr} dB",
+                          protocol.fmt_num(status.voltage, 2),
+                          "")
+        item = self.log_tree.insert("", tk.END, values=values, tags=tags)
         children = self.log_tree.get_children()
         if len(children) > 400:
             self.log_tree.delete(*children[:len(children) - 400])
@@ -980,24 +1055,23 @@ class RemoteApp:
             self.log(self._t("freq_out_of_band"))
 
     _SMETER_W = 260
-    _SMETER_H = 122
-    _SMETER_BG = "#f4eedd"     # Hintergrund = Zifferblattfarbe, ab Start hell
+    _SMETER_H = 150
+    _SMETER_CASE = "#2b2b2b"   # dunkles Metallgehaeuse
+    _SMETER_BEZEL = "#c9c4b4"  # Metallrand
     _SMETER_FACE = "#f4eedd"   # helles Zifferblatt
     _SMETER_TXT = "#111"
     _SMETER_TICK = "#000"
-    _SMETER_RED = "#c00"       # roter Bereich am Skalenende
+    _SMETER_RED = "#c00"       # roter Bereich dB ueber S9
     _SMETER_NEEDLE = "#000"
-    _SMETER_PIVOT = (130, 86)   # Drehpunkt des Zeigers
-    _SMETER_R = 60              # Skalenradius
-    _SMETER_ARC = 180            # Zeichenauslenkung links->rechts (Grad)
-    _SMETER_RED_FROM = 0.85     # ab hier Skalenbereich rot
+    _SMETER_PIVOT = (130, 118)  # Drehpunkt des Zeigers
+    _SMETER_R = 92              # Skalenradius
+    _SMETER_ARC = 100           # Zeigerwinkel links->rechts (Grad)
+    _SMETER_A0 = -50            # Winkel des linken Skalenendes (Grad)
 
     def _smeter_value(self, status) -> tuple[float, str, list[str]]:
         """Metrik-abhaengiger Anzeigewert: (0..1, Text, Tick-Labels)."""
         metric = self.smeter_metric_var.get()
-        s_label = self._t("metric_s")
-        snr_label = self._t("metric_snr")
-        if metric == s_label:
+        if metric == "s":
             # Skala S1..S9 mit Bereich darueber (+10..+60 dB ueber S9);
             # Zeigerwert und Ticks verwenden dieselbe Positionsskala:
             # 15 Schritte = S1..S9 (9) + 10..60 dB (6)
@@ -1018,19 +1092,19 @@ class RemoteApp:
                         pass
             pos = max(0, min(pos, 14))
             return pos / 14, s, ticks
-        if metric == snr_label:
+        if metric == "snr":
             # SNR 0..60 dB -> 0..1; Ticks alle 15 dB
             v = max(0.0, min(status.snr, 60.0)) / 60.0
             text = f"{status.snr:.0f} dB"
             return v, text, ["0", "15", "30", "45", "60"]
-        # Signalstärke: RSSI 0..127 dBuV -> 0..1; Ticks alle 20 dB
+        # Signalstaerke: RSSI 0..127 dBuV -> 0..1; Ticks alle 20 dB
         v = max(0.0, min(status.rssi, 127.0)) / 127.0
         return v, f"{status.rssi} dBµV", [str(t) for t in range(20, 128, 20)]
 
     def _smeter_redraw(self):
         """S-Meter neu zeichnen: analoges Zeigerinstrument im klassischen
-        Look mit hellem Zifferblatt, Skala ausserhalb des Halbkreises
-        beschriftet, rotem Uebersteuerungsbereich und Zeiger."""
+        Look (Vorbild DL4ZAO): dunkles Gehaeuse, helles Zifferblatt,
+        Skalenbogen mit Ticks, rotem Bereich und Zeiger mit Gegengewicht."""
         import math as _math
         canvas = self.smeter_canvas
         canvas.delete("all")
@@ -1043,55 +1117,67 @@ class RemoteApp:
         h = self._SMETER_H
         cx, cy = self._SMETER_PIVOT
         r = self._SMETER_R
+        a0 = self._SMETER_A0
         arc = self._SMETER_ARC
 
-        def polar(angle_deg: float, radius: float) -> tuple[float, float]:
-            # Winkel 0 = linke Skalenendung, arc = rechte Skalenendung,
-            # Bogen verlaeuft oberhalb des Drehpunkts
-            a = _math.radians(180 - angle_deg)
-            return cx + radius * _math.cos(a), cy - radius * _math.sin(a)
+        def polar(pos: float, radius: float) -> tuple[float, float]:
+            # pos 0 = linke Skalenendung, 1 = rechte; Winkel in Grad,
+            # 0 Grad = senkrecht nach oben, positiv = im Uhrzeigersinn
+            ang = _math.radians(a0 + arc * pos)
+            return cx + radius * _math.sin(ang), cy - radius * _math.cos(ang)
 
-        # helles Zifferblatt im dunklen Gehaeuse, mit Blende als Rahmen
-        canvas.create_rectangle(4, 4, w - 4, h - 4,
-                                fill=self._SMETER_FACE,
-                                outline="#999", width=2)
-        # roter Uebersteuerungsbereich am Skalenende als Bogenband
-        a0 = self._SMETER_RED_FROM * arc
-        band = []
-        steps = 12
-        for i in range(steps + 1):
-            band.append(polar(a0 + (arc - a0) * i / steps, r + 2))
-        for i in range(steps, -1, -1):
-            band.append(polar(a0 + (arc - a0) * i / steps, r - 3))
-        canvas.create_polygon(*band, fill=self._SMETER_RED, outline="")
-        # Skala: Hauptticks mit Label ausserhalb des Bogens, Zwischenticks
+        # Gehaeuse mit Metallrand
+        canvas.create_rectangle(2, 2, w - 2, h - 2,
+                                fill=self._SMETER_CASE, outline="")
+        canvas.create_rectangle(7, 7, w - 7, h - 7,
+                                fill=self._SMETER_BEZEL, outline="")
+        canvas.create_rectangle(12, 12, w - 12, h - 12,
+                                fill=self._SMETER_FACE, outline="")
+
+        # Roter Bereich am Skalenende als Bogenband
         n = max(len(ticks) - 1, 1)
-        for i in range(n + 1):
-            angle = i * arc / n
-            x_out, y_out = polar(angle, r)
-            x_in, y_in = polar(angle, r - 10)
+        red_from = 9 / 15 if len(ticks) == 15 else 0.85
+        band = []
+        steps = 10
+        for i in range(steps + 1):
+            band.append(polar(red_from + (1 - red_from) * i / steps, r))
+        for i in range(steps, -1, -1):
+            band.append(polar(red_from + (1 - red_from) * i / steps, r - 7))
+        canvas.create_polygon(*band, fill=self._SMETER_RED, outline="")
+
+        # Skala: Hauptticks mit Label, Zwischenticks (leer = nur Bogen)
+        for i in range(n + 1 if ticks else 0):
+            pos = i / n
+            x_out, y_out = polar(pos, r)
+            x_in, y_in = polar(pos, r - 10)
             canvas.create_line(x_out, y_out, x_in, y_in,
                                fill=self._SMETER_TICK, width=2)
-            lx, ly = polar(angle, r + 13)
+            lx, ly = polar(pos, r + 8)
             canvas.create_text(lx, ly, text=ticks[i], anchor="c",
                                font=("", 8), fill=self._SMETER_TXT)
             if i < n:
                 for sub in (1/3, 2/3):
-                    a_sub = angle + arc / n * sub
-                    xs_out, ys_out = polar(a_sub, r)
-                    xs_in, ys_in = polar(a_sub, r - 6)
+                    xs_out, ys_out = polar(pos + (1 / n) * sub, r)
+                    xs_in, ys_in = polar(pos + (1 / n) * sub, r - 6)
                     canvas.create_line(xs_out, ys_out, xs_in, ys_in,
                                        fill=self._SMETER_TICK, width=1)
-        # Zeiger vom Drehpunkt zum Skalenwert, Drehpunkt als Nabe
-        nx, ny = polar(value * arc, r - 6)
+
+        # Zeiger mit Gegengewicht, Nabe darueber
+        nx, ny = polar(value, r - 6)
         canvas.create_line(cx, cy, nx, ny,
                            fill=self._SMETER_NEEDLE, width=2)
-        canvas.create_oval(cx - 4, cy - 4, cx + 4, cy + 4,
-                           fill=self._SMETER_TICK, outline="")
+        tx, ty = polar(value, -18)
+        canvas.create_line(cx, cy, tx, ty,
+                           fill=self._SMETER_NEEDLE, width=4)
+        canvas.create_oval(cx - 6, cy - 6, cx + 6, cy + 6,
+                           fill=self._SMETER_CASE, outline="")
+        canvas.create_oval(cx - 3, cy - 3, cx + 3, cy + 3,
+                           fill=self._SMETER_BEZEL, outline="")
+
         # Wertziffer unter dem Drehpunkt, rot im Uebersteuerungsbereich
-        canvas.create_text(cx, cy + 9, text=text, anchor="n",
+        canvas.create_text(cx, cy + 16, text=text, anchor="n",
                            font=("", 9, "bold"),
-                           fill=self._SMETER_RED if value >= self._SMETER_RED_FROM
+                           fill=self._SMETER_RED if value >= red_from
                            else self._SMETER_TXT)
 
     def _set_row_values(self, status: protocol.ReceiverStatus):

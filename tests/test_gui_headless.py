@@ -15,6 +15,7 @@ class FakeWidget:
         self.children = []
         self.kwargs = dict(kwargs)
         self.pack_kwargs = None
+        self.config_kwargs = dict(kwargs)
         if hasattr(parent, "children"):
             parent.children.append(self)
 
@@ -44,7 +45,9 @@ class FakeWidget:
                     "its content windows")
 
     def config(self, **kw):
-        self.config_kwargs = dict(kw)
+        if not hasattr(self, "config_kwargs"):
+            self.config_kwargs = {}
+        self.config_kwargs.update(kw)
 
     def pack(self, **kw):
         self.pack_kwargs = dict(kw)
@@ -72,6 +75,9 @@ class FakeFrame(FakeWidget):
         self._managers = set()
         self._name = kwargs.get("text", "frame")
         self.children = []
+
+    def title(self, *a, **kw):
+        pass
 
 
 def make_tkinter_mock():
@@ -189,6 +195,7 @@ class GuiSmokeTest(unittest.TestCase):
         application._pending_memory = []
         application._screenshot = None
         application._lang_var = FakeVar()
+        application._i18n_labels = []
         application._build_ui()
         # Kein Exception -> Aufbau ok
         self.assertTrue(True)
@@ -208,6 +215,7 @@ class GuiSmokeTest(unittest.TestCase):
         application._pending_memory = []
         application._screenshot = None
         application._lang_var = FakeVar()
+        application._i18n_labels = []
         application._build_ui()
 
         # Menueleiste: Ansicht und Hilfe mit den besprochenen Eintraegen
@@ -246,6 +254,69 @@ class GuiSmokeTest(unittest.TestCase):
         self.assertEqual(shown[0][0], "Über")
         self.assertIn("Version", shown[0][1])
         self.assertIn(app2.PROJECT_URL, shown[0][1])
+
+    def test_log_splits_status_line(self):
+        """Statuszeilen des Radios werden in Spalten zerlegt."""
+        from ats_mini_remote import protocol
+        make_tkinter_mock()
+        from ats_mini_remote import app as app_mod
+        application = object.__new__(app_mod.RemoteApp)
+        application._t = lambda key, **kw: {"col_message": "Nachricht"}.get(key, key)
+        application._log_line_is_raw = lambda msg: False
+        application.log_tree = FakeLogTree()
+        line = "1,3600,0,0,80M,LSB,1k,2k,0,20,64,30,10,4.10,7"
+        application._log_insert("radio", line)
+        row = application.log_tree.rows[0]
+        # freq, band, mode, vol, rssi, snr, spannung sind gefuellt
+        self.assertIn("3600", row[0][3])
+        self.assertEqual(row[0][4], "80M")
+        self.assertEqual(row[0][5], "LSB")
+        self.assertEqual(row[0][9], "20")
+        self.assertIn("64", row[0][10])
+        self.assertIn("30", row[0][11])
+        self.assertIn("4", row[0][12])
+        # Nachricht-Spalte bleibt leer
+        self.assertEqual(row[0][13], "")
+        # Kein Status: Nachricht erscheint unzerlegt in der Msg-Spalte
+        application._log_insert("radio", "Error: bad format")
+        row = application.log_tree.rows[1]
+        self.assertEqual(row[0][13], "Error: bad format")
+
+    def test_language_switch_updates_static_texts(self):
+        """Sprachwechsel stellt alle registrierten Texte um."""
+        make_tkinter_mock()
+        from ats_mini_remote import app as app_mod
+        from ats_mini_remote import i18n
+        root = FakeFrame(None)
+        application = object.__new__(app_mod.RemoteApp)
+        application.root = root
+        application.client = None
+        application._row_value_vars = {}
+        application._pending_memory = []
+        application._screenshot = None
+        application._lang_var = FakeVar()
+        application._i18n_labels = []
+        application._build_ui()
+        application.client = type("C", (), {"is_connected": lambda self: False})()
+        application.root.title = lambda *a, **kw: None
+        application.smeter_canvas = FakeCanvas()
+        application._last_status = None
+        try:
+            application.switch_language("English")
+            texts = {w.config_kwargs.get("text")
+                     for w, _key in application._i18n_labels}
+            for expected in ("Connection", "Receiver", "Controls",
+                             "Memory slots", "Spectrum", "Display",
+                             "Log", "Host:", "Slot:", "Points:"):
+                self.assertIn(expected, texts, f"missing: {expected}")
+            application.switch_language("Deutsch")
+            texts = {w.config_kwargs.get("text")
+                     for w, _key in application._i18n_labels}
+            self.assertIn("Verbindung", texts)
+            self.assertIn("Speicherplätze", texts)
+        finally:
+            from ats_mini_remote import i18n as _i18n
+            _i18n.set_language("Deutsch")
 
     def test_app_version_format(self):
         make_tkinter_mock()
@@ -374,6 +445,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._last_status = None
         application._memory_refresh_id = None
         application._lang_var = FakeVar()
+        application._i18n_labels = []
         application._sweep_data = [(3_500_000, 10), (3_600_000, 20)]
         application._sweep_freqs = [3_500_000, 3_600_000]
         application._sweep_freq_range = (3_500_000, 4_000_000)
@@ -383,7 +455,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application.sweep_canvas = FakeCanvas()
         application.smeter_canvas = FakeCanvas()
         application.smeter_metric_var = FakeVar()
-        application.smeter_metric_var.value = "Signalstärke"
+        application.smeter_metric_var.value = "rssi"
         application.volume_var = FakeVar()
         application.freq_var = FakeVar()
         application.band_var = FakeVar()
@@ -494,18 +566,24 @@ class SpectrumMarkerTest(unittest.TestCase):
         cx, cy = app._SMETER_PIVOT
         needles = [ln for ln in canvas.lines
                    if ln[1].get("fill") == app._SMETER_NEEDLE
-                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1]
-        self.assertEqual(len(needles), 1)   # genau ein Zeiger vom Drehpunkt
-        self.assertEqual(len(canvas.ovals), 1)   # Drehpunkt
+                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1
+                   and ln[1].get("width") == 2]
+        self.assertEqual(len(needles), 1)   # Zeiger vom Drehpunkt
+        tails = [ln for ln in canvas.lines
+                 if ln[1].get("fill") == app._SMETER_NEEDLE
+                 and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1
+                 and ln[1].get("width") == 4]
+        self.assertEqual(len(tails), 1)      # Gegengewicht
+        self.assertEqual(len(canvas.ovals), 2)   # Nabe (innen + aussen)
         texts = [t[1].get("text") for t in canvas.texts]
         self.assertIn("64 dBµV", texts)
         # Skala: RSSI-Ticks 20..120 vorhanden
         for tick in ("20", "60", "120"):
             self.assertIn(tick, texts)
-        # Zeigerwinkel: 64/127 der Halbkreisspanne, von links ueber oben
+        # Zeigerwinkel: (64/127) des Bogens, a0 = -50 Grad, Bogen 100 Grad
         (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
-        angle = math.degrees(math.atan2(cy - y2, x2 - cx))
-        expected = 180 - (64 / 127) * 180
+        angle = math.degrees(math.atan2(x2 - cx, cy - y2))
+        expected = app._SMETER_A0 + app._SMETER_ARC * (64 / 127)
         self.assertAlmostEqual(angle, expected, delta=2)
 
     def test_smeter_labels_outside_scale(self):
@@ -532,7 +610,7 @@ class SpectrumMarkerTest(unittest.TestCase):
             frequency=3_600, mode="AM", band="80M",
             rssi=64, snr=30)
         # S-Wert-Metrik: Skala S1..S9 plus Bereich +10..+60 ueber S9
-        app.smeter_metric_var.value = "S-Wert"
+        app.smeter_metric_var.value = "s"
         app._smeter_redraw()
         canvas = app.smeter_canvas
         texts = [t[1].get("text") for t in canvas.texts]
@@ -543,24 +621,20 @@ class SpectrumMarkerTest(unittest.TestCase):
         # Zeigerposition S9+20 = Position 11 von 15 muss rechts vom
         # S9-Tick (Position 9 von 15) liegen
         cx, cy = app._SMETER_PIVOT
-        r = app._SMETER_R
-        s9_text = [t for t in canvas.texts if t[1].get("text") == "S9"][0]
-        s9_angle = math.degrees(
-            math.atan2(cy - s9_text[0][1], s9_text[0][0] - cx))
         needles = [ln for ln in canvas.lines
                    if ln[1].get("fill") == app._SMETER_NEEDLE
-                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1]
+                   and abs(ln[0][0] - cx) < 1 and abs(ln[0][1] - cy) < 1
+                   and ln[1].get("width") == 2]
         (x1, y1), (x2, y2) = needles[0][0][:2], needles[0][0][2:4]
-        needle_angle = math.degrees(
-            math.atan2(cy - y2, x2 - cx))
-        # Zeiger uebernimmt dieselbe Winkelskala wie die Ticks: gleiche
-        # Differenz zum linken Skalenansatz wie die Tick-Position
-        needle_pos = (180 - needle_angle) / 180
+        needle_angle = math.degrees(math.atan2(x2 - cx, cy - y2))
+        # Zeiger uebernimmt dieselbe Positionsskala wie die Ticks:
+        # 15 Ticks = Index 0..14, S9+20 = Index 10
+        needle_pos = (needle_angle - app._SMETER_A0) / app._SMETER_ARC
         self.assertGreater(needle_pos, 8 / 14)   # rechts vom S9-Tick
         self.assertLess(needle_pos, 1.0)
         self.assertAlmostEqual(needle_pos, 10 / 14, delta=0.02)
         # SNR-Metrik: Ticks 0/15/30/45/60, Text in dB
-        app.smeter_metric_var.value = "SNR"
+        app.smeter_metric_var.value = "snr"
         app._smeter_redraw()
         texts = [t[1].get("text") for t in app.smeter_canvas.texts]
         self.assertIn("30 dB", texts)
@@ -726,6 +800,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._pending_memory = []
         application._screenshot = None
         application._lang_var = FakeVar()
+        application._i18n_labels = []
         application._build_ui()
         # Canvas-Hintergrund ist ab Programmstart die Zifferblattfarbe
         self.assertEqual(application.smeter_canvas.kwargs.get("bg"),
@@ -734,7 +809,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         application._last_status = protocol.ReceiverStatus(
             frequency=3_600, mode="AM", band="80M", rssi=64, snr=30)
         application.smeter_metric_var = FakeVar()
-        application.smeter_metric_var.value = "Signalstärke"
+        application.smeter_metric_var.value = "rssi"
         application.smeter_canvas = FakeCanvas()
         application._smeter_redraw()
         h = application._SMETER_H
