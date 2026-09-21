@@ -52,7 +52,7 @@ DE = {
     "sweep_cancelled": "Abgebrochen",
     # Screenshot
     "display": "Display",
-    "screenshot": "Screenshot (C)",
+    "screenshot": "Screenshot",
     "save_as": "Speichern…",
     "no_screenshot": "Kein Screenshot",
     "receiving": "Empfange… {percent} %",
@@ -155,7 +155,7 @@ EN = {
     "sweep_done": "Done",
     "sweep_cancelled": "Cancelled",
     "display": "Display",
-    "screenshot": "Screenshot (C)",
+    "screenshot": "Screenshot",
     "save_as": "Save…",
     "no_screenshot": "No screenshot",
     "receiving": "Receiving… {percent} %",
