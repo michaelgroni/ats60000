@@ -913,7 +913,7 @@ class RemoteApp:
         if current_hz is not None and plot.lo <= current_hz <= plot.hi:
             x = plot.fx(current_hz)
             self.sweep_canvas.create_line(x, plot.pad_t, x, plot.base_y,
-                                          fill="#f80", width=2)
+                                          fill=self.MARKER_COLOR, width=2)
 
     _SWEEP_PEAK_FILL = "#060"   # Peak-Hold: blasseres Gruen
 
@@ -1070,7 +1070,8 @@ class RemoteApp:
     _SMETER_TXT = "#111"
     _SMETER_TICK = "#000"
     _SMETER_RED = "#c00"       # roter Bereich am Skalenende
-    _SMETER_NEEDLE = "#000"
+    MARKER_COLOR = "#f80"        # Farbe der Frequenzmarke im Spektrum
+    _SMETER_NEEDLE = MARKER_COLOR
     _SMETER_PIVOT = (130, 86)   # Drehpunkt des Zeigers
     _SMETER_R = 60              # Skalenradius
     _SMETER_ARC = 180            # Zeichenauslenkung links->rechts (Grad)
