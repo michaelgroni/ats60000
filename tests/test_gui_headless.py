@@ -811,6 +811,39 @@ class SpectrumMarkerTest(unittest.TestCase):
         texts = [t[1].get("text") for t in app.freq_display.texts]
         self.assertIn("kHz", texts)
 
+    def test_freq_display_decimal_point_stays_fixed(self):
+        app = self._make_app()
+        from ats_mini_remote import protocol
+        # 3600,000 kHz (4 Vorkommastellen) ...
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M"))
+        dot_1 = app.freq_display.ovals[0][0][:2]
+        # ... und 30000,000 kHz (5 Vorkommastellen, laengste Anzeige)
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=30_000, mode="AM", band="SW"))
+        dot_2 = app.freq_display.ovals[0][0][:2]
+        self.assertEqual(dot_1, dot_2,
+                         "Dezimalpunkt springt zwischen den Frequenzen")
+        # auch im FM-Modus steht der Punkt an derselben Stelle
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=10_790, mode="FM", band="VHF"))
+        dot_3 = app.freq_display.ovals[0][0][:2]
+        self.assertEqual(dot_1, dot_3,
+                         "Dezimalpunkt springt zwischen AM und FM")
+
+    def test_freq_display_leading_cells_stay_dark(self):
+        app = self._make_app()
+        from ats_mini_remote import protocol
+        # 3600 kHz: vier leuchtende Ziffern, die fuehrende Zelle dunkel
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M"))
+        lit = len(app.freq_display.polygons)
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=30_000, mode="AM", band="SW"))
+        full = len(app.freq_display.polygons)
+        self.assertGreater(full, lit,
+                           "fuehrende Zellen leuchten, obwohl keine Ziffer")
+
     def test_freq_display_long_frequency_fits_into_canvas(self):
         app = self._make_app()
         from ats_mini_remote import protocol

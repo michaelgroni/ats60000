@@ -1227,6 +1227,7 @@ class RemoteApp:
     _7SEG_H = 28             # Ziffernhoehe
     _7SEG_T = 3              # Segmentstaerke
     _7SEG_GAP = 8            # Abstand zwischen Ziffern
+    _7SEG_INT_CELLS = 5      # feste Zahl der Zellen vor dem Dezimalpunkt
     _7SEG_MAP = {
         "0": "abcdef", "1": "bc", "2": "abdeg", "3": "abcdg",
         "4": "bcfg", "5": "acdfg", "6": "acdefg", "7": "abc",
@@ -1257,32 +1258,43 @@ class RemoteApp:
         if status is None:
             return
         hz = status.display_frequency_hz()
+        sep = protocol.decimal_separator()
         if status.mode.upper() == "FM":
             text = protocol.fmt_num(hz / 1e6, 2)
             unit = "MHz"
         else:
             text = protocol.fmt_num(hz / 1e3, 3)
             unit = "kHz"
-        # Feste, kompakte Segmentgroesse: auch die laengste Anzeige
-        # (30000,000 kHz im KW-Band) passt in die 240-px-Canvas.
+        head, _, frac = text.partition(sep)
+        # Fester Aufbau: der Vorkommateil belegt immer gleich viele
+        # Zellen, fuehrende Ziffern bleiben dunkel. Der Dezimalpunkt
+        # steht dadurch fuer jede Frequenz und in beiden Modi an
+        # derselben Stelle und springt beim Frequenzwechsel nicht.
+        int_digits = head.zfill(self._7SEG_INT_CELLS)
+        lit_int = int_digits.lstrip("0") or "0"
         w = self._7SEG_W
         h = self._7SEG_H
         t = self._7SEG_T
         gap = self._7SEG_GAP
         x = t + 1
-        for ch in text:
-            if ch.isdigit():
+        for i, ch in enumerate(int_digits):
+            if i >= self._7SEG_INT_CELLS - len(lit_int):
                 for seg in self._7SEG_MAP[ch]:
                     canvas.create_polygon(
                         *self._7seg_points(x, w, h, t, seg),
                         fill=self._7SEG_ON, outline="")
-                x += w + gap
-            elif ch in ",.":
-                y1 = t + h
-                dx = x - gap // 2
-                canvas.create_oval(dx - 2, y1 - 3, dx + 3, y1 + 2,
-                                   fill=self._7SEG_ON, outline="")
-                x += gap
+            x += w + gap
+        y1 = t + h
+        dx = x - gap // 2
+        canvas.create_oval(dx - 2, y1 - 3, dx + 3, y1 + 2,
+                           fill=self._7SEG_ON, outline="")
+        x += gap
+        for ch in frac:
+            for seg in self._7SEG_MAP[ch]:
+                canvas.create_polygon(
+                    *self._7seg_points(x, w, h, t, seg),
+                    fill=self._7SEG_ON, outline="")
+            x += w + gap
         canvas.create_text(x + 3, t + h // 2, anchor="w", text=unit,
                            font=("", 10, "bold"), fill="#333")
 
