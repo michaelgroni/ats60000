@@ -201,11 +201,14 @@ class RemoteApp:
         ttk.Entry(ctrl, textvariable=self.freq_entry_var, width=14).grid(
             row=0, column=1, padx=2)
         self.freq_unit_var = tk.StringVar(value="MHz")
-        unit_box = ttk.Combobox(ctrl, textvariable=self.freq_unit_var,
-                                values=["kHz", "MHz"], width=5, state="readonly")
-        unit_box.grid(row=0, column=2, padx=2)
-        self._tr(ttk.Button(ctrl, text=self._t("set"), command=self.set_frequency),
-                 "set").grid(row=0, column=3, padx=4)
+        freq_row = ttk.Frame(ctrl)
+        freq_row.grid(row=0, column=2, sticky="w")
+        ttk.Combobox(freq_row, textvariable=self.freq_unit_var,
+                     values=["kHz", "MHz"], width=5,
+                     state="readonly").pack(side=tk.LEFT, padx=(0, 4))
+        self._tr(ttk.Button(freq_row, text=self._t("set"),
+                            command=self.set_frequency),
+                 "set").pack(side=tk.LEFT)
 
         self.volume_var = tk.IntVar(value=0)
         self._volume_dragging = False
