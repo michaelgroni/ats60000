@@ -128,7 +128,7 @@ def make_tkinter_mock():
 
     ttk = types.ModuleType("tkinter.ttk")
     class FakeTreeview(FakeWidget):
-        def heading(self, col, text=None):
+        def heading(self, col, text=None, **kw):
             pass
 
         def column(self, *a, **kw):
@@ -719,11 +719,10 @@ class SpectrumMarkerTest(unittest.TestCase):
         from ats_mini_remote import protocol
         app._freq_redraw(protocol.ReceiverStatus(
             frequency=3_600, mode="AM", band="80M"))
-        # sieben Segmente pro Ziffer, alle Ziffern leuchten teilweise
+        # nur die leuchtenden Segmente, alle in LED-Farbe
         self.assertGreater(len(app.freq_display.polygons), 7)
         fills = {p[1].get("fill") for p in app.freq_display.polygons}
-        self.assertIn(app._7SEG_ON, fills)
-        self.assertIn(app._7SEG_OFF, fills)
+        self.assertEqual(fills, {app._7SEG_ON})
         texts = [t[1].get("text") for t in app.freq_display.texts]
         self.assertIn("kHz", texts)
 

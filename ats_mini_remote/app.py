@@ -170,7 +170,7 @@ class RemoteApp:
         status.pack(fill=tk.X, **pad)
         left = tk.Frame(status, bg="#ffffff")
         left.grid(row=0, column=0, sticky="w", padx=10, pady=4)
-        self.freq_display = tk.Canvas(left, width=230, height=42,
+        self.freq_display = tk.Canvas(left, width=340, height=56,
                                       bg="#ffffff", highlightthickness=0)
         self.freq_display.grid(row=0, column=0, sticky="w")
         self.batt_canvas = tk.Canvas(left, width=120, height=26,
@@ -303,8 +303,8 @@ class RemoteApp:
                                         columns=[c[0] for c in self._memory_cols],
                                         show="headings", height=6)
         for col, key, width in self._memory_cols:
-            self.memory_tree.heading(col, text=self._t(key))
-            self.memory_tree.column(col, width=width)
+            self.memory_tree.heading(col, text=self._t(key), anchor="w")
+            self.memory_tree.column(col, width=width, anchor="w")
         self.memory_tree.grid(row=1, column=0, columnspan=4, sticky="we", padx=4, pady=4)
         mem.columnconfigure(0, weight=1)
         ctrl.columnconfigure(5, weight=1)
@@ -1126,11 +1126,10 @@ class RemoteApp:
         return v, f"{status.rssi} dBµV", [str(t) for t in range(10, 128, 10)]
 
     _7SEG_ON = "#d00"       # leuchtende Segmente (rote LED)
-    _7SEG_OFF = "#e4e4e4"   # dunkle Segmente wie bei echten Displays
-    _7SEG_W = 16             # Ziffernbreite
-    _7SEG_H = 30             # Ziffernhoehe
-    _7SEG_T = 3              # Segmentstaerke
-    _7SEG_GAP = 6            # Abstand zwischen Ziffern
+    _7SEG_W = 20             # Ziffernbreite
+    _7SEG_H = 38             # Ziffernhoehe
+    _7SEG_T = 4              # Segmentstaerke
+    _7SEG_GAP = 12           # Abstand zwischen Ziffern
     _7SEG_MAP = {
         "0": "abcdef", "1": "bc", "2": "abdeg", "3": "abcdg",
         "4": "bcfg", "5": "acdfg", "6": "acdefg", "7": "abc",
@@ -1173,12 +1172,10 @@ class RemoteApp:
         x = t + 1
         for ch in text:
             if ch.isdigit():
-                segs = self._7SEG_MAP[ch]
-                for seg in "abcdefg":
+                for seg in self._7SEG_MAP[ch]:
                     canvas.create_polygon(
                         *self._7seg_points(x, w, h, t, seg),
-                        fill=self._7SEG_ON if seg in segs else self._7SEG_OFF,
-                        outline="")
+                        fill=self._7SEG_ON, outline="")
                 x += w + self._7SEG_GAP
             elif ch in ",.":
                 canvas.create_rectangle(x - 1, h + 2 * t + 3, x + 3,
