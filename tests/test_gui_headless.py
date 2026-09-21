@@ -651,7 +651,7 @@ class SpectrumMarkerTest(unittest.TestCase):
         # SNR-Instrument: eigene Anzeige mit Ticks 0..60, Text in dB
         app._snr_redraw()
         texts = [t[1].get("text") for t in app.snr_canvas.texts]
-        self.assertIn("30 dB", texts)
+        self.assertIn("SNR 30 dB", texts)
         for tick in ("0", "10", "20", "30", "40", "50", "60"):
             self.assertIn(tick, texts)
 

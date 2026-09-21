@@ -96,7 +96,6 @@ class RemoteApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title(self._t("app_title"))
-        root.minsize(560, 520)
 
         self.client = RemoteClient(
             on_status=self.on_status,
@@ -128,6 +127,11 @@ class RemoteApp:
         self._sweep_axes_band: str = ""
 
         self._build_ui()
+        # Natuerliche Fensterbreite als Minimum: beim Zusammenschieben
+        # bleibt der Inhalt vollstaendig sichtbar, groesser ziehen
+        # laesst sich das Fenster frei (Spektrum und Instrumente wachsen)
+        root.update_idletasks()
+        root.minsize(root.winfo_reqwidth(), 520)
         root.after(50, self._poll_main_thread)
 
     # ----------------------------------------------------------- Oberfläche
@@ -194,8 +198,8 @@ class RemoteApp:
                                        bg=self._SMETER_FACE,
                                        highlightthickness=0)
         self.smeter_canvas.grid(row=0, column=1, sticky="we")
-        meter.columnconfigure(0, weight=1)
-        meter.columnconfigure(1, weight=1)
+        meter.columnconfigure(0, weight=1, minsize=self._SMETER_W)
+        meter.columnconfigure(1, weight=1, minsize=self._SMETER_W)
         self.snr_canvas.bind("<Configure>", lambda _e: self._snr_redraw())
         self.smeter_canvas.bind("<Configure>", lambda _e: self._smeter_redraw())
         metric_btns = tk.Frame(meter, bg="#ffffff")
@@ -1225,7 +1229,9 @@ class RemoteApp:
             w = self._SMETER_W
         h = self._SMETER_H
         cx, cy = w / 2, self._SMETER_PIVOT[1]
-        r = self._SMETER_R
+        # Skalenradius an die Breite anpassen: im schmalen Fenster
+        # wird das Instrument kleiner, aber nie links/rechts beschnitten
+        r = min(self._SMETER_R, w / 2 - 26)
         arc = self._SMETER_ARC
 
         def polar(angle_deg: float, radius: float) -> tuple[float, float]:
@@ -1292,7 +1298,7 @@ class RemoteApp:
         value, text, ticks = 0.0, "–", []
         if status is not None:
             value = max(0.0, min(status.snr, 60.0)) / 60.0
-            text = f"{status.snr:.0f} dB"
+            text = f"SNR {status.snr:.0f} dB"
             ticks = ["0", "10", "20", "30", "40", "50", "60"]
         self._meter_draw(self.snr_canvas, value, text, ticks)
 
