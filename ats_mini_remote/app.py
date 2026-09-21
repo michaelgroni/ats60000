@@ -163,32 +163,42 @@ class RemoteApp:
         self.state_label = ttk.Label(conn, text=self._t("disconnected"), foreground="#a00")
         self.state_label.grid(row=0, column=5, sticky="w", padx=6)
 
-        # Status
-        status = ttk.LabelFrame(outer, text=self._t("receiver"))
+        # Status: weisser Bereich mit Siebensegment-Frequenzanzeige,
+        # Handy-Batteriesymbol mit Spannungswert und dem S-Meter
+        status = tk.LabelFrame(outer, text=self._t("receiver"), bg="#ffffff")
         self._tr(status, "receiver")
         status.pack(fill=tk.X, **pad)
-        self.freq_var = tk.StringVar(value="–")
-        self.band_var = tk.StringVar(value="–")
-        self.mode_var = tk.StringVar(value="–")
-        self.rssi_var = tk.StringVar(value="–")
-        self.smeter_var = tk.StringVar(value="–")
-        self.snr_var = tk.StringVar(value="–")
-        self.batt_var = tk.StringVar(value="–")
-        for col, (label, var) in enumerate([
-            ("frequency", self.freq_var),
-            ("band", self.band_var),
-            ("mode", self.mode_var),
-            ("signal_strength", self.rssi_var),
-            ("s_value", self.smeter_var),
-            ("snr", self.snr_var),
-            ("battery", self.batt_var),
-        ]):
-            self._tr(ttk.Label(status, text=self._t(label),
-                               font=("", 8, "bold")),
-                     label).grid(row=0, column=col, sticky="w",
-                                 padx=8, pady=(6, 0))
-            ttk.Label(status, textvariable=var, font=("", 12, "bold")).grid(
-                row=1, column=col, sticky="w", padx=8, pady=(0, 6))
+        left = tk.Frame(status, bg="#ffffff")
+        left.grid(row=0, column=0, sticky="w", padx=10, pady=4)
+        self.freq_display = tk.Canvas(left, width=230, height=42,
+                                      bg="#ffffff", highlightthickness=0)
+        self.freq_display.grid(row=0, column=0, sticky="w")
+        self.batt_canvas = tk.Canvas(left, width=120, height=26,
+                                     bg="#ffffff", highlightthickness=0)
+        self.batt_canvas.grid(row=1, column=0, sticky="w", pady=(2, 4))
+
+        # Quasianaloges S-Meter rechts im Empfänger-Bereich;
+        # Metrik per Radiobutton: RSSI, S-Wert oder SNR
+        meter = tk.Frame(status, bg="#ffffff")
+        meter.grid(row=0, column=1, sticky="ne",
+                   padx=(16, 10), pady=4)
+        self.smeter_metric_var = tk.StringVar(value="rssi")
+        for i, (key, val) in enumerate((("metric_rssi", "rssi"),
+                                        ("metric_s", "s"),
+                                        ("metric_snr", "snr"))):
+            self._tr(tk.Radiobutton(meter, text=self._t(key), value=val,
+                                    variable=self.smeter_metric_var,
+                                    command=self._smeter_redraw,
+                                    bg="#ffffff",
+                                    activebackground="#ffffff"),
+                     key).grid(row=0, column=i, sticky="w", padx=2)
+        self.smeter_canvas = tk.Canvas(meter, width=self._SMETER_W,
+                                       height=self._SMETER_H,
+                                       bg=self._SMETER_FACE,
+                                       highlightthickness=0)
+        self.smeter_canvas.grid(row=1, column=0, columnspan=3,
+                               sticky="we", pady=(4, 2))
+        status.columnconfigure(1, weight=1)
 
         # Steuerung
         ctrl = ttk.LabelFrame(outer, text=self._t("controls"))
@@ -269,31 +279,11 @@ class RemoteApp:
             ttk.Button(ctrl, text="▶", width=3,
                        command=up_cmd).grid(row=row, column=3, sticky="w")
 
-        # Quasianaloges S-Meter rechts neben den Steuerelementen;
-# Metrik per Radiobutton: RSSI, S-Wert oder SNR
-        meter = ttk.Frame(ctrl)
-        meter.grid(row=1, column=5, rowspan=len(rows), sticky="nsew",
-                   padx=(12, 4), pady=2)
-        self.smeter_metric_var = tk.StringVar(value="rssi")
-        for i, (key, val) in enumerate((("metric_rssi", "rssi"),
-                                        ("metric_s", "s"),
-                                        ("metric_snr", "snr"))):
-            self._tr(ttk.Radiobutton(meter, text=self._t(key), value=val,
-                                     variable=self.smeter_metric_var,
-                                     command=self._smeter_redraw),
-                     key).grid(row=0, column=i, sticky="w", padx=2)
-        self.smeter_canvas = tk.Canvas(meter, width=self._SMETER_W,
-                                       height=self._SMETER_H,
-                                       bg=self._SMETER_FACE,
-                                       highlightthickness=0)
-        self.smeter_canvas.grid(row=1, column=0, columnspan=3,
-                               sticky="we", pady=(4, 2))
-        ctrl.columnconfigure(5, weight=1)
 
         # Speicher
-        mem = ttk.LabelFrame(outer, text=self._t("memories"))
+        mem = ttk.LabelFrame(ctrl, text=self._t("memories"))
         self._tr(mem, "memories")
-        mem.pack(fill=tk.X, **pad)
+        mem.grid(row=1, column=5, rowspan=len(rows), sticky="nw", padx=(12, 4), pady=2)
         self._tr(ttk.Label(mem, text=self._t("slot")), "slot").grid(
             row=0, column=0, padx=4)
         self.slot_var = tk.StringVar(value="1")
@@ -311,12 +301,13 @@ class RemoteApp:
                              ("mode", "col_mode", 60))
         self.memory_tree = ttk.Treeview(mem,
                                         columns=[c[0] for c in self._memory_cols],
-                                        show="headings", height=4)
+                                        show="headings", height=6)
         for col, key, width in self._memory_cols:
             self.memory_tree.heading(col, text=self._t(key))
             self.memory_tree.column(col, width=width)
         self.memory_tree.grid(row=1, column=0, columnspan=4, sticky="we", padx=4, pady=4)
         mem.columnconfigure(0, weight=1)
+        ctrl.columnconfigure(5, weight=1)
 
         # Spektrum (Sweep)
         sweep = ttk.LabelFrame(outer, text=self._t("spectrum"))
@@ -1134,6 +1125,86 @@ class RemoteApp:
         v = max(0.0, min(status.rssi, 127.0)) / 127.0
         return v, f"{status.rssi} dBµV", [str(t) for t in range(10, 128, 10)]
 
+    _7SEG_ON = "#d00"       # leuchtende Segmente (rote LED)
+    _7SEG_OFF = "#e4e4e4"   # dunkle Segmente wie bei echten Displays
+    _7SEG_W = 16             # Ziffernbreite
+    _7SEG_H = 30             # Ziffernhoehe
+    _7SEG_T = 3              # Segmentstaerke
+    _7SEG_GAP = 6            # Abstand zwischen Ziffern
+    _7SEG_MAP = {
+        "0": "abcdef", "1": "bc", "2": "abdeg", "3": "abcdg",
+        "4": "bcfg", "5": "acdfg", "6": "acdefg", "7": "abc",
+        "8": "abcdefg", "9": "abcdfg",
+    }
+
+    @staticmethod
+    def _7seg_points(x, w, h, t, seg):
+        """Polygon-Punkte eines einzelnen Segments im Ziffernkasten."""
+        y0 = t
+        y1 = t + h
+        ym = (y0 + y1) // 2
+        if seg in "agd":
+            y = {"a": y0, "g": ym, "d": y1}[seg]
+            return [(x, y), (x + t, y + t), (x + w - t, y + t), (x + w, y),
+                    (x + w - t, y - t), (x + t, y - t)]
+        xa, ya, yb = {
+            "f": (x, y0, ym), "b": (x + w, y0, ym),
+            "e": (x, ym, y1), "c": (x + w, ym, y1),
+        }[seg]
+        return [(xa, ya), (xa + t, ya + t), (xa + t, yb - t), (xa, yb),
+                (xa - t, yb - t), (xa - t, ya + t)]
+
+    def _freq_redraw(self, status):
+        """Frequenz als nachgebildete Siebensegmentanzeige zeichnen."""
+        canvas = self.freq_display
+        canvas.delete("all")
+        if status is None:
+            return
+        hz = status.display_frequency_hz()
+        if status.mode.upper() == "FM":
+            text = protocol.fmt_num(hz / 1e6, 2)
+            unit = "MHz"
+        else:
+            text = protocol.fmt_num(hz / 1e3, 3)
+            unit = "kHz"
+        w = self._7SEG_W
+        h = self._7SEG_H
+        t = self._7SEG_T
+        x = t + 1
+        for ch in text:
+            if ch.isdigit():
+                segs = self._7SEG_MAP[ch]
+                for seg in "abcdefg":
+                    canvas.create_polygon(
+                        *self._7seg_points(x, w, h, t, seg),
+                        fill=self._7SEG_ON if seg in segs else self._7SEG_OFF,
+                        outline="")
+                x += w + self._7SEG_GAP
+            elif ch in ",.":
+                canvas.create_rectangle(x - 1, h + 2 * t + 3, x + 3,
+                                        h + 2 * t + 7,
+                                        fill=self._7SEG_ON, outline="")
+                x += 4 + self._7SEG_GAP
+        canvas.create_text(x + 4, t + h // 2, anchor="w", text=unit,
+                           font=("", 10, "bold"), fill="#333")
+
+    def _battery_redraw(self, status):
+        """Batteriesymbol wie bei einem Handy plus Spannung als Zahl."""
+        canvas = self.batt_canvas
+        canvas.delete("all")
+        v = status.voltage if status is not None else 0.0
+        canvas.create_rectangle(4, 5, 44, 21, outline="#333", width=2)
+        canvas.create_rectangle(44, 9, 48, 17, fill="#333", outline="")
+        frac = max(0.0, min(1.0, (v - 3.0) / 1.2))
+        color = ("#2a2" if v >= 3.7
+                 else "#c80" if v >= 3.4 else "#c00")
+        if frac > 0:
+            canvas.create_rectangle(6, 7, 6 + int(36 * frac), 19,
+                                    fill=color, outline="")
+        canvas.create_text(56, 13, anchor="w",
+                           text=f"{protocol.fmt_num(v, 2)} V",
+                           font=("", 10, "bold"), fill="#333")
+
     def _smeter_redraw(self):
         """S-Meter neu zeichnen: analoges Zeigerinstrument im klassischen
         Look mit hellem Zifferblatt, Skala ausserhalb des Halbkreises
@@ -1513,25 +1584,12 @@ class RemoteApp:
                 # zum Zurückschalten; ohne Slider-Bewegung waere er sonst 0
                 if status.volume > 0:
                     self._volume_target = status.volume
-                # Ziel-Lautstaerke mitfuehren: die Rauschsperre braucht ihn
-                # zum Zurückschalten; ohne Slider-Bewegung waere er sonst 0
-                if status.volume > 0:
-                    self._volume_target = status.volume
-            hz = status.display_frequency_hz()
-            if status.mode.upper() == "FM":
-                self.freq_var.set(f"{protocol.fmt_num(hz / 1e6, 2)} MHz")
-            else:
-                self.freq_var.set(f"{protocol.fmt_num(hz / 1e3, 3)} kHz")
-            self.band_var.set(status.band)
-            self.mode_var.set(status.mode)
-            self.rssi_var.set(f"{status.rssi} dBµV")
-            self.smeter_var.set(
-                protocol.s_meter(status.rssi, status.mode.upper() == "FM"))
-            self.snr_var.set(f"{status.snr} dB")
-            self.batt_var.set(f"{protocol.fmt_num(status.voltage, 2)} V")
+            self._freq_redraw(status)
+            self._battery_redraw(status)
             self._set_row_values(status)
             self._squelch_eval(status)
             self._smeter_redraw()
+            hz = status.display_frequency_hz()
             # Frequenzmarke im Spektrum nachziehen, wenn die Frequenz
             # geaendert wurde (ausserhalb des Sweeps, der selbst zeichnet).
             # Ohne Spektrumdaten werden Achsen und Marke aus dem aktuellen

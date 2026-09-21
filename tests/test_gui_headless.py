@@ -121,6 +121,7 @@ def make_tkinter_mock():
 
     mod.Menu = FakeMenu
     mod.Canvas = FakeWidget
+    mod.Radiobutton = FakeWidget
     mod.NORMAL = "normal"
     mod.DISABLED = "disabled"
     mod.PhotoImage = lambda **kw: None
@@ -469,14 +470,9 @@ class SpectrumMarkerTest(unittest.TestCase):
         application.smeter_canvas = FakeCanvas()
         application.smeter_metric_var = FakeVar()
         application.smeter_metric_var.value = "rssi"
+        application.freq_display = FakeCanvas()
+        application.batt_canvas = FakeCanvas()
         application.volume_var = FakeVar()
-        application.freq_var = FakeVar()
-        application.band_var = FakeVar()
-        application.mode_var = FakeVar()
-        application.rssi_var = FakeVar()
-        application.smeter_var = FakeVar()
-        application.snr_var = FakeVar()
-        application.batt_var = FakeVar()
         application.sweep_points_var = FakeVar()
         application.sweep_progress_var = FakeVar()
         application.log_tree = FakeLogTree()
@@ -717,6 +713,29 @@ class SpectrumMarkerTest(unittest.TestCase):
         return protocol.ReceiverStatus(
             frequency=3_600, mode="AM", band="80M",
             rssi=rssi, snr=snr, volume=30)
+
+    def test_freq_display_draws_segments(self):
+        app = self._make_app()
+        from ats_mini_remote import protocol
+        app._freq_redraw(protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M"))
+        # sieben Segmente pro Ziffer, alle Ziffern leuchten teilweise
+        self.assertGreater(len(app.freq_display.polygons), 7)
+        fills = {p[1].get("fill") for p in app.freq_display.polygons}
+        self.assertIn(app._7SEG_ON, fills)
+        self.assertIn(app._7SEG_OFF, fills)
+        texts = [t[1].get("text") for t in app.freq_display.texts]
+        self.assertIn("kHz", texts)
+
+    def test_battery_display_draws_symbol_and_voltage(self):
+        app = self._make_app()
+        from ats_mini_remote import protocol
+        app._battery_redraw(protocol.ReceiverStatus(
+            frequency=3_600, mode="AM", band="80M", voltage=4.05))
+        # Batteriesymbol: Gehaeuse, Nub und Fuellstand
+        self.assertGreaterEqual(len(app.batt_canvas.rectangles), 3)
+        texts = [t[1].get("text") for t in app.batt_canvas.texts]
+        self.assertTrue(any(t.endswith("V") for t in texts))
 
     def test_squelch_sensitivity_shifts_threshold(self):
         app = self._make_app()
