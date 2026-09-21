@@ -62,6 +62,9 @@ class FakeWidget:
     def columnconfigure(self, *a, **kw):
         pass
 
+    def rowconfigure(self, *a, **kw):
+        pass
+
     def bind(self, *a, **kw):
         pass
 
@@ -106,7 +109,17 @@ def make_tkinter_mock():
     mod.X = "x"
     mod.Y = "y"
     mod.BOTH = "both"
-    tk_var = type("Var", (), {"__init__": lambda self, *a, **kw: None})
+    class FakeTkVar:
+        def __init__(self, *a, **kw):
+            self.value = a[0] if a else kw.get("value")
+
+        def set(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+    tk_var = FakeTkVar
     mod.StringVar = tk_var
     mod.IntVar = tk_var
     mod.BooleanVar = tk_var
@@ -352,7 +365,19 @@ class GuiSmokeTest(unittest.TestCase):
 
 
 class FakeScrollCanvas(FakeWidget):
-    """Scroll-Canvas: keine echte Geometrie, nur Aufrufe protokollieren."""
+    """Scroll- und Zeichen-Canvas: Aufrufe protokollieren statt
+    darstellen; Scroll-Geometrie bleibt ohne Funktion."""
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.lines = []
+        self.rectangles = []
+        self.polygons = []
+        self.ovals = []
+        self.texts = []
+        self.deleted = 0
+        self.width = 300
+        self.height = 140
 
     def create_window(self, *a, **kw):
         return 1
@@ -371,6 +396,30 @@ class FakeScrollCanvas(FakeWidget):
 
     def configure(self, **kw):
         self.config(**kw)
+
+    def delete(self, *a, **kw):
+        self.deleted += 1
+
+    def winfo_width(self):
+        return self.width
+
+    def cget(self, key):
+        return str(self.height) if key == "height" else ""
+
+    def create_rectangle(self, *a, **kw):
+        self.rectangles.append((a, kw))
+
+    def create_polygon(self, *a, **kw):
+        self.polygons.append((a, kw))
+
+    def create_oval(self, *a, **kw):
+        self.ovals.append((a, kw))
+
+    def create_line(self, *a, **kw):
+        self.lines.append((a, kw))
+
+    def create_text(self, *a, **kw):
+        self.texts.append((a, kw))
 
 
 class FakeCanvas:

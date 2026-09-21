@@ -157,6 +157,10 @@ class RemoteApp:
         box = self._scroll.bbox("all")
         self.root.minsize(box[2] + 24, 200)
         self.root.geometry(f"{box[2] + 24}x{box[3] + 4}")
+        # Zeigerinstrumente gleich beim Start vollstaendig zeichnen,
+        # auch ohne Verbindung (Skala, Zeiger auf 0)
+        self._smeter_redraw()
+        self._snr_redraw()
         # Mausrad steuert das Scroll-Canvas
         self.root.bind_all("<MouseWheel>", self._on_mousewheel)
 
@@ -356,7 +360,13 @@ class RemoteApp:
         for col, key, width in self._memory_cols:
             self.memory_tree.heading(col, text=self._t(key), anchor="w")
             self.memory_tree.column(col, width=width, anchor="w")
-        self.memory_tree.grid(row=1, column=0, columnspan=4, sticky="we", padx=4, pady=4)
+        self.memory_tree.grid(row=1, column=0, columnspan=4,
+                              sticky="nsew", padx=4, pady=4)
+        mem_scroll = ttk.Scrollbar(mem, orient=tk.VERTICAL,
+                                   command=self.memory_tree.yview)
+        mem_scroll.grid(row=1, column=4, sticky="ns", pady=4)
+        self.memory_tree.configure(yscrollcommand=mem_scroll.set)
+        mem.rowconfigure(1, weight=1)
         mem.columnconfigure(0, weight=1)
 
         # Spektrum (Sweep)
@@ -470,6 +480,9 @@ class RemoteApp:
         """
         i18n.set_language(name)
         self.root.title(self._t("app_title"))
+        # Menueleiste neu aufbauen: Eintraege (Ansicht, Hilfe, Sprache)
+        # sind sonst nicht uebersetzt
+        self._build_menu()
         self._apply_language()
 
     def _apply_language(self):
@@ -1136,6 +1149,23 @@ class RemoteApp:
     _SMETER_ARC = 180            # Zeichenauslenkung links->rechts (Grad)
     _SMETER_RED_FROM = 0.85     # ab hier Skalenbereich rot
 
+    def _metric_ticks(self, metric: str) -> list[str]:
+        """Tick-Labels der Skala je Metrik; unabhaengig vom Status,
+        damit die Instrumente auch ohne Verbindung vollstaendig
+        gezeichnet werden koennen."""
+        if metric == "s":
+            # 15 Positionen: S1..S9 und +10..+60 dB; Labels nur auf
+            # jeder zweiten Position (1, 3, 5, 7, 9, +20, +40, +60)
+            ticks = []
+            for pos in range(15):
+                label = (str(pos + 1) if pos < 9
+                         else f"+{(pos - 8) * 10}")
+                ticks.append(label if pos % 2 == 0 else None)
+            return ticks
+        if metric == "snr":
+            return [str(t) for t in range(0, 61, 10)]
+        return [str(t) for t in range(10, 128, 10)]
+
     def _smeter_value(self, status) -> tuple[float, str, list[str]]:
         """Metrik-abhaengiger Anzeigewert: (0..1, Text, Tick-Labels)."""
         metric = self.smeter_metric_var.get()
@@ -1144,15 +1174,7 @@ class RemoteApp:
             # Zeigerwert und Ticks verwenden dieselbe Positionsskala:
             # 15 Schritte = S1..S9 (9) + 10..60 dB (6)
             s = protocol.s_meter(status.rssi, status.mode.upper() == "FM")
-            # 15 Positionen: 1..9 und +10..+60; Labels nur auf jeder
-            # zweiten Position (1, 3, 5, 7, 9, +20, +40, +60)
-            ticks = []
-            for pos in range(15):
-                if pos < 9:
-                    label = str(pos + 1)
-                else:
-                    label = f"+{(pos - 8) * 10}"
-                ticks.append(label if pos % 2 == 0 else None)
+            ticks = self._metric_ticks(metric)
             pos = 14   # ">S9+60" -> Skalenende
             if s.startswith("S"):
                 body, _, over = s[1:].partition("+")
@@ -1322,21 +1344,22 @@ class RemoteApp:
                            else self._SMETER_TXT)
 
     def _smeter_redraw(self):
-        """S-Meter nach Metrikwahl (Signalstaerke oder S-Wert) zeichnen."""
-        status = self._last_status
-        value, text, ticks = 0.0, "–", []
+        """S-Meter nach Metrikwahl (Pegel oder S-Wert) zeichnen; auch
+        ohne Verbindung mit vollstaendiger Skala."""
+        status = getattr(self, "_last_status", None)
+        value, text, ticks = 0.0, "–", self._metric_ticks(
+            self.smeter_metric_var.get())
         if status is not None:
             value, text, ticks = self._smeter_value(status)
         self._meter_draw(self.smeter_canvas, value, text, ticks)
 
     def _snr_redraw(self):
         """SNR-Instrument: 0..60 dB, Ticks alle 10 dB."""
-        status = self._last_status
-        value, text, ticks = 0.0, "–", []
+        status = getattr(self, "_last_status", None)
+        value, text, ticks = 0.0, "–", self._metric_ticks("snr")
         if status is not None:
             value = max(0.0, min(status.snr, 60.0)) / 60.0
             text = f"SNR {status.snr:.0f} dB"
-            ticks = ["0", "10", "20", "30", "40", "50", "60"]
         self._meter_draw(self.snr_canvas, value, text, ticks)
 
     def _set_row_values(self, status: protocol.ReceiverStatus):
