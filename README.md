@@ -2,8 +2,7 @@
 
 Desktop-Fernbedienung für das **ATS-Miniradio V1** (ESP32-S3 + SI4732) über WLAN.
 Die Anwendung verbindet sich mit dem integrierten TCP-Fernsteuerport der
-Firmware (Ad-hoc-Protokoll, Port 60000) – am Radio muss **nichts umgebaut oder
-geflasht** werden.
+Firmware (Ad-hoc-Protokoll, Port 60000) – am Radio muss nichts umgebaut oder werden.
 
 Geschrieben in Python, nur Standardbibliothek (Tkinter für die Oberfläche) –
 keine Zusatzpakete nötig.
@@ -29,9 +28,7 @@ keine Zusatzpakete nötig.
 
 Das neueste Release auf der
 [Release-Seite](https://github.com/michaelgroni/ats60000/releases)
-herunterladen: Die EXE-Datei (z. B. `ATS-Mini-Remote-0.3.exe`) ist eine einzelne, eigenständige
-Datei – kein Python, keine Installation, keine Administratorrechte.
-Einfach speichern und per Doppelklick starten.
+herunterladen: Die EXE-Datei, z. B. `ATS-Mini-Remote-0.3.exe`, ist direkt ausführbar.
 
 Eine ausführliche Schritt-für-Schritt-Anleitung für Windows-Benutzer gibt es auf Deutsch in
 [docs/ANLEITUNG.md](docs/ANLEITUNG.md) und auf Englisch in
@@ -39,7 +36,7 @@ Eine ausführliche Schritt-für-Schritt-Anleitung für Windows-Benutzer gibt es 
 
 * Beim ersten Start zeigt Windows SmartScreen eine Warnung („Windows hat
   Ihren PC geschützt“), weil die EXE nicht digital signiert ist.
-  *Trotzdem ausführen* wählen – die Datei enthält nur das Programm.
+  *Trotzdem ausführen* wählen.
 * Wer Python bereits installiert hat: kein Konflikt, die EXE bringt
   ihren eigenen Interpreter mit und berührt keine bestehende
   Python-Installation.
@@ -50,17 +47,10 @@ Eine ausführliche Schritt-für-Schritt-Anleitung für Windows-Benutzer gibt es 
 python3 -m ats_mini_remote
 ```
 
-Dann Host (`atsmini.local` oder IP) und Port 60000 eintragen und auf
+Dann Host und Port anpsseen (in der Regel nicht nötig) und auf
 **Verbinden** klicken. Beim Programmstart wird automatisch einmal
 versucht, das Radio unter dem eingetragenen Host zu erreichen – schlägt
-das fehl, bleibt es still, und Sie verbinden einfach von Hand. Beim
-Verbinden wird der Statusmonitor automatisch aktiviert; Frequenz, Band,
-Modus, Signalstärke, SNR und Batteriespannung aktualisieren sich laufend
-(etwa alle 50 ms).
-
-Zahlen mit Nachkommastellen (Frequenz, Spannung, Achsenbeschriftung) folgen
-dem Dezimaltrenner des Betriebssystem-Locales (also Komma im deutschen
-System); die Frequenzeingabe akzeptiert Punkt und Komma.
+das fehl, verbinden einfach von Hand.
 
 Die Oberfläche lässt sich in der Menüleiste unter *Ansicht → Sprache*
 zwischen Deutsch und Englisch umschalten.
