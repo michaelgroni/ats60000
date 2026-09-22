@@ -3,11 +3,9 @@
 This program controls your **ATS-Mini radio** over Wi-Fi – no cables, no
 installation, and no computer skills required.
 
-Note: the program window itself is labelled in German. The most
-important buttons are: *Verbinden* (connect), *Trennen* (disconnect),
-*Setzen* (set), *Sweep starten* (start sweep), *Abbrechen* (cancel),
-*Lautstärke* (volume), *Frequenz* (frequency), *Band*, *Modus* (mode),
-*Schrittweite* (step size), *Bandbreite* (bandwidth).
+Note: under **View → Language** you can switch the program window to
+German or English at any time. This guide describes the English
+interface.
 
 ## Installation
 
@@ -51,8 +49,14 @@ switched on:
    please leave it as it is.
 4. Click **Connect**.
 
+The program also tries to reach the radio on its own when it starts
+(automatic connection attempt). If that fails, nothing bad happens –
+simply click **Connect** yourself.
+
 The program now shows the radio's status at the bottom of the window,
-for example the battery voltage.
+for example the battery voltage. The frequency display at the top uses
+fixed digit cells: the decimal point always stays in the same place
+when you tune, and empty leading cells stay dark.
 
 ## Operating the program
 
@@ -75,12 +79,20 @@ from the radio's menu.
 The **Volume** slider sets the radio's volume. The new value is sent
 when you release the slider.
 
+### Squelch
+
+The **Squelch** (AM and FM only) mutes distracting noise when barely
+any signal is arriving. Set the sensitivity on the slider and tick the
+check box next to it. When the signal drops too far, the radio goes
+briefly silent; when the signal returns, the volume is restored. In SSB
+modes the squelch is greyed out – it does not work there.
+
 ### Reading signal strength (S-meter)
 
 On the right you see a display like an old-fashioned meter with a
 needle:
 
-- **Signal strength**: how strong the incoming signal is (in dBµV)
+- **Level**: how strong the incoming signal is (in dBµV)
 - **S-value**: the usual shortwave reading like *S9*, also *S9+20*
   and above
 - **SNR**: how clean the signal is (in dB)
@@ -98,19 +110,33 @@ picture where you can see at a glance where strong stations are:
   stronger during a previous sweep)
 
 Click anywhere in the picture to tune the radio directly to that
-frequency. Below the picture you can watch the progress while the
-program measures.
+frequency. This works even if no sweep has run yet – the program then
+uses the range of the current band. Below the picture you can watch the
+progress while the program measures.
 
 ### Memory slots
 
+The **Memory slots** table next to the settings always shows what is
+stored in the radio:
+
 - **Show ($)**: lists the stations stored in the radio
 - **Save current station (#)**: stores the current station in a free slot
+- **Clear**: removes a slot (frequency 0)
+
+Recalling a stored station is done on the radio itself – the remote
+control protocol has no command for that.
 
 ### Other buttons
 
 - **Screenshot**: takes a picture of the radio's display and can save
   it as a file
 - **Disconnect**: ends the connection to the radio
+
+### Log (expert view)
+
+Under **View → Show log** you can show a table in which the program
+records all communication with the radio (time, source, message). You
+do not need it for normal operation – it helps with troubleshooting.
 
 ## If something does not work
 

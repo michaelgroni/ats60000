@@ -3,6 +3,10 @@
 Dieses Programm steuert Ihr **ATS-Miniradio** über das WLAN – ganz ohne
 Kabel und ohne Installation. Sie brauchen keine Computerkenntnisse.
 
+Hinweis: Das Programmfenster lässt sich unter **Ansicht → Sprache** auch
+auf Englisch umschalten. Diese Anleitung beschreibt die deutsche
+Oberfläche.
+
 ## Installation
 
 1. Öffnen Sie die Programmseite auf GitHub:
@@ -46,8 +50,14 @@ eingeschaltet haben:
    ändern.
 4. Klicken Sie auf **Verbinden**.
 
+Das Programm versucht beim Start auch von selbst, das Radio zu erreichen
+(automatischer Verbindungsversuch). Klappt das nicht, passiert nichts
+Schlimmes – klicken Sie einfach selbst auf **Verbinden**.
+
 Das Programm zeigt nun unten im Fenster laufend den Zustand des Radios an,
-z. B. die Batteriespannung.
+z. B. die Batteriespannung. Die Frequenzanzeige oben hat feste Zellen:
+Der Dezimalpunkt bleibt beim Verstellen immer an derselben Stelle,
+führende leere Zellen bleiben dunkel.
 
 ## Bedienung
 
@@ -71,11 +81,20 @@ runter, wie Sie es vom Radio-Menü kennen.
 Der Schieberegler **Lautstärke** stellt die Radiolautstärke ein. Der
 neue Wert wird erst übertragen, wenn Sie den Regler loslassen.
 
-### Signalstärke ablesen (S-Meter)
+### Rauschsperre
+
+Die **Rauschsperre** (nur bei AM und FM) blendet störendes Rauschen aus,
+wenn kaum ein Signal ankommt. Stellen Sie die **Empfindlichkeit** auf dem
+Regler ein und aktivieren Sie das Häkchen daneben. Sinkt das Signal zu
+weit ab, wird das Radio kurzzeitig stumm; kommt das Signal zurück, ist
+die Lautstärke wieder wie vorher. Bei SSB ist die Rauschsperre
+ausgegraut – sie funktioniert dort nicht.
+
+### Pegel ablesen (S-Meter)
 
 Rechts sehen Sie eine Anzeige wie ein altes Messgerät mit Zeiger:
 
-- **Signalstärke**: wie stark das Signal ankommt (in dBµV)
+- **Pegel**: wie stark das Signal ankommt (in dBµV)
 - **S-Wert**: die übliche Kurzwellen-Angabe wie *S9*, auch *S9+20* und
   höher
 - **SNR**: wie klar das Signal ist (in dB)
@@ -94,20 +113,35 @@ wo starke Sender sind:
   Durchlauf stärker gewesen sein)
 
 Klicken Sie auf eine Stelle im Bild, um das Radio direkt auf diese
-Frequenz zu tunen. Unter dem Bild sehen Sie den Fortschritt, während
-das Programm misst.
+Frequenz zu tunen. Das geht auch, wenn noch kein Sweep gelaufen ist –
+das Programm nimmt dann den Bereich des aktuellen Bands. Unter dem Bild
+sehen Sie den Fortschritt, während das Programm misst.
 
 ### Speicherplätze
+
+Die Tabelle **Speicherplätze** rechts neben den Einstellungen zeigt immer,
+was im Radio gespeichert ist:
 
 - **Anzeigen ($)**: listet die gespeicherten Sender des Radios auf
 - **Aktuellen Sender speichern (#)**: legt den aktuellen Sender auf einen
   freien Platz
+- **Löschen**: entfernt einen Slot (Frequenz 0)
+
+Das Aufrufen eines gespeicherten Senders erfolgt am Radio selbst – dafür
+kennt das Fernsteuerprotokoll keinen Befehl.
 
 ### Weitere Knöpfe
 
 - **Screenshot**: macht ein Bild des Radiodisplays und kann es als
   Datei speichern
 - **Trennen**: beendet die Verbindung zum Radio
+
+### Log (Expertenansicht)
+
+Unter **Ansicht → Log anzeigen** blenden Sie eine Tabelle ein, in der das
+Programm alle Kommunikation mit dem Radio mitgeschrieben hat (Zeit,
+Quelle, Nachricht). Für die normale Bedienung brauchen Sie sie nicht –
+sie hilft bei Problemen.
 
 ## Wenn etwas nicht funktioniert
 

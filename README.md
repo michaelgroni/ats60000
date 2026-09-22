@@ -51,27 +51,40 @@ python3 -m ats_mini_remote
 ```
 
 Dann Host (`atsmini.local` oder IP) und Port 60000 eintragen und auf
-**Verbinden** klicken. Beim Verbinden wird der Statusmonitor automatisch
-aktiviert; Frequenz, Band, Modus, Signalstärke, SNR und Batteriespannung
-aktualisieren sich laufend (etwa alle 50 ms).
+**Verbinden** klicken. Beim Programmstart wird automatisch einmal
+versucht, das Radio unter dem eingetragenen Host zu erreichen – schlägt
+das fehl, bleibt es still, und Sie verbinden einfach von Hand. Beim
+Verbinden wird der Statusmonitor automatisch aktiviert; Frequenz, Band,
+Modus, Signalstärke, SNR und Batteriespannung aktualisieren sich laufend
+(etwa alle 50 ms).
 
 Zahlen mit Nachkommastellen (Frequenz, Spannung, Achsenbeschriftung) folgen
 dem Dezimaltrenner des Betriebssystem-Locales (also Komma im deutschen
 System); die Frequenzeingabe akzeptiert Punkt und Komma.
 
+Die Oberfläche lässt sich in der Menüleiste unter *Ansicht → Sprache*
+zwischen Deutsch und Englisch umschalten.
+
 ### Bedienung
 
 * **Frequenz**: Direkteingabe (z. B. `107.9` MHz) oder schrittweise mit
   `◀`/`▶`. Jede eingestellte Frequenz ist ein Vielfaches der aktuellen
-  Schrittweite – auch nach Klick ins Spektrum.
+  Schrittweite – auch nach Klick ins Spektrum. Die Siebensegment-Anzeige
+  hat eine feste Zellenbreite: Der Dezimalpunkt springt beim Wechseln
+  nicht, führende Zellen bleiben dunkel.
 * **Schrittweite / Lautstärke / Band / Modus / Bandbreite / AGC/Attn**:
   je eine Zeile mit `◀`/`▶`-Buttons, der aktuelle Wert steht dazwischen.
   Die Lautstärke (0–63) wird als Schieberegler erst beim Loslassen
   gesendet – Ziehen am Regler erzeugt keinen Befehlsburst.
 * **S-Meter**: Analoge Zeigerinstrument-Anzeige rechts der Steuerleiste,
-  umschaltbar per Radiobutton zwischen Signalstärke (dBµV), S-Wert
+  umschaltbar per Radiobutton zwischen Pegel (dBµV), S-Wert
   (S1 … S9 mit Bereich +10 … +60 dB darüber) und SNR (dB). Der obere
   Skalenbereich ist rot markiert; die Wertziffer färbt sich dort rot.
+* **Rauschsperre** (nur AM/FM): Blendet Rauschen unterhalb der
+  eingestellten Empfindlichkeit aus, basierend auf RSSI und SNR mit
+  Hysterese. Da das Radio keine Stummschaltung kennt, wird die Lautstärke
+  dazu vorübergehend auf 0 gesetzt und beim Öffnen der Sperre
+  zurückgestellt. In SSB-Modi sind Regler und Checkbox ausgegraut.
 * **Spektrum**: Manueller Band-Sweep auf Knopfdruck. Die Zahl der
   Messpunkte wird abhängig von der Bandbreite des eingestellten Bands
   empfohlen (z. B. mehr Punkte im VHF-Band), lässt sich aber frei
@@ -80,13 +93,18 @@ System); die Frequenzeingabe akzeptiert Punkt und Komma.
   und interpoliert die Fläche lückenlos (grün). Zurückschauen in der
   Zeit: ein blasseres Polygon zeigt den Verlauf aus vorherigem Wert und
   gleitendem Mittelwert (Peak-Hold je Frequenz). Ein Klick ins Spektrum
-  stimmt die Frequenz an dieser Stelle an (auf dem Schrittweiten-Raster).
-* **Speicherplätze**: Anzeigen (`$`), aktuellen Sender in einen Slot
+  stimmt die Frequenz an der Stelle an (auf dem Schrittweiten-Raster) –
+  auch ohne vorherigen Sweep; der Bereich ergibt sich dann aus dem
+  aktuellen Band.
+* **Speicherplätze**: Tabelle mit den belegten Slots, stets sichtbar
+  neben der Steuerung; Anzeigen (`$`), aktuellen Sender in einen Slot
   schreiben (`#`), Slot löschen (Frequenz 0). Das Aufrufen eines Slots
   erfolgt am Radio selbst – dafür gibt es im Protokoll keinen Befehl.
 * **Screenshot**: Fängt das Radio-Display ab (BMP) und zeigt es an;
   speicherbar als Datei.
-* **Log**: Rohdaten der Verbindung im unteren Bereich.
+* **Log**: Rohdaten der Verbindung im unteren Bereich, als Tabelle mit
+  Spalten (Zeit, Quelle, Nachricht); über *Ansicht* ein- und ausblendbar,
+  beim Start ausgeblendet.
 
 ## Ohne Radio testen (Mock-Server)
 
@@ -136,6 +154,7 @@ ats_mini_remote/
 ├── __main__.py        # Einstieg: python3 -m ats_mini_remote
 ├── app.py             # Tkinter-Oberfläche, Spektrum, S-Meter
 ├── client.py          # TCP-Client mit Lese-Thread und Send-Guard
+├── i18n.py            # Oberflächentexte Deutsch/Englisch
 ├── mock_receiver.py   # Nachbau des Radio-Fernsteuerprotokolls (Demo/Test)
 └── protocol.py        # Ad-hoc-Protokoll: Befehle, Status, Sweep-Planung,
                       # S-Wert-Tabelle, Locale-Zahlenformate
