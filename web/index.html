@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>ATS-Mini Fernbedienung</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>ATS-Mini Fernbedienung</h1>
+    <button id="connect-btn">Verbinden</button>
+    <span id="state">Nicht verbunden</span>
+  </header>
+
+  <main>
+    <section id="status">
+      <canvas id="freq-display" width="240" height="56"></canvas>
+      <div id="status-line">–</div>
+    </section>
+
+    <section id="meter">
+      <div class="metric">
+        <span id="s-value">–</span>
+        <span class="unit">S-Wert</span>
+      </div>
+      <div class="metric">
+        <span id="rssi-value">–</span>
+        <span class="unit">dBµV</span>
+      </div>
+      <div class="metric">
+        <span id="snr-value">–</span>
+        <span class="unit">dB SNR</span>
+      </div>
+    </section>
+
+    <section id="controls">
+      <div class="row">
+        <label for="freq-input">Frequenz</label>
+        <input id="freq-input" type="text" inputmode="decimal" placeholder="z. B. 107.9">
+        <select id="freq-unit">
+          <option value="MHz">MHz</option>
+          <option value="kHz">kHz</option>
+        </select>
+        <button id="freq-set">Setzen</button>
+      </div>
+      <div class="row buttons">
+        <button data-cmd="b">◀ Band</button>
+        <span id="band-value">–</span>
+        <button data-cmd="B">Band ▶</button>
+      </div>
+      <div class="row buttons">
+        <button data-cmd="m">◀ Modus</button>
+        <span id="mode-value">–</span>
+        <button data-cmd="M">Modus ▶</button>
+      </div>
+      <div class="row buttons">
+        <button data-cmd="s">◀ Schritt</button>
+        <span id="step-value">–</span>
+        <button data-cmd="S">Schritt ▶</button>
+      </div>
+      <div class="row buttons">
+        <button data-cmd="w">◀ BW</button>
+        <span id="bw-value">–</span>
+        <button data-cmd="W">BW ▶</button>
+      </div>
+      <div class="row buttons">
+        <button data-cmd="a">◀ AGC</button>
+        <span id="agc-value">–</span>
+        <button data-cmd="A">AGC ▶</button>
+      </div>
+      <div class="row buttons volume">
+        <button data-cmd="v">–</button>
+        <input id="volume" type="range" min="0" max="63" value="0">
+        <button data-cmd="V">+</button>
+        <span id="vol-value">–</span>
+      </div>
+    </section>
+
+    <section id="log-section">
+      <button id="log-toggle">Log anzeigen</button>
+      <pre id="log" hidden></pre>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

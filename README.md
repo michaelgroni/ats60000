@@ -93,6 +93,33 @@ zwischen Deutsch und Englisch umschalten.
   Spalten (Zeit, Quelle, Nachricht); über *Ansicht* ein- und ausblendbar,
   beim Start ausgeblendet.
 
+## PWA für Smartphone und Tablet (Bluetooth)
+
+Im Ordner [web/](web/) liegt eine Progressive Web App, die das Radio per
+**Bluetooth LE** statt WLAN steuert – ohne Zusatzhardware. Sie nutzt dasselbe
+Ad-hoc-Protokoll wie die Desktop-Fernbedienung, nur als Transport über den
+Nordic UART Service der Firmware.
+
+Am Radio einmalig einstellen: `Settings → Bluetooth → Ad hoc`.
+
+| Plattform | Browser |
+|---|---|
+| Android | Chrome, Edge (Web Bluetooth direkt) |
+| iPhone/iPad | [Bluefy](https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055) (Web-Bluetooth-Browser) |
+| Desktop | Chrome, Edge (mit Bluetooth-Adapter) |
+
+Die App muss über HTTPS ausgeliefert werden, z. B. über GitHub Pages. Ohne
+passenden Browser meldet sie einen klaren Hinweis. Enthalten: Verbinden mit
+automatischem Monitor-Start, Siebensegment-Frequenzanzeige mit festem
+Dezimalpunkt, S-Wert/RSSI/SNR, Frequenz- und Rastersteuerung, Lautstärke per
+Burst, Log. Beim Abbruch der Verbindung verbindet sie automatisch nach.
+
+Tests der Web-Portierung (Node 18+):
+
+```shell
+node --test web/tests/protocol.test.mjs web/tests/ble.test.mjs
+```
+
 ## Ohne Radio testen (Mock-Server)
 
 Zum Ausprobieren der Oberfläche ohne Empfangsgerät liegt ein
@@ -145,6 +172,11 @@ ats_mini_remote/
 ├── mock_receiver.py   # Nachbau des Radio-Fernsteuerprotokolls (Demo/Test)
 └── protocol.py        # Ad-hoc-Protokoll: Befehle, Status, Sweep-Planung,
                       # S-Wert-Tabelle, Locale-Zahlenformate
+web/                   # PWA: Bluetooth-Fernbedienung fürs Smartphone
+├── index.html, app.js, style.css
+├── ble.js             # Web-Bluetooth-Transport (Nordic UART Service)
+├── protocol.js        # Protokoll-Portierung (wie protocol.py)
+└── tests/             # Node-Tests der Web-Portierung
 tests/                 # Unit- und Integrationstests
 ```
 
