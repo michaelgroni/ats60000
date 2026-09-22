@@ -2,8 +2,8 @@ name: PWA auf GitHub Pages
 
 on:
   push:
-    branches: [main]
-    paths: ['web/**']
+    branches: [development]
+    paths: ['web/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:
