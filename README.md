@@ -2,7 +2,7 @@
 
 Desktop-Fernbedienung für das **ATS-Miniradio V1** (ESP32-S3 + SI4732) über WLAN.
 Die Anwendung verbindet sich mit dem integrierten TCP-Fernsteuerport der
-Firmware (Ad-hoc-Protokoll, Port 60000) – am Radio muss nichts umgebaut oder werden.
+Firmware (Ad-hoc-Protokoll, Port 60000) – am Radio muss nichts umgebaut werden.
 
 Geschrieben in Python, nur Standardbibliothek (Tkinter für die Oberfläche) –
 keine Zusatzpakete nötig.
@@ -58,10 +58,7 @@ zwischen Deutsch und Englisch umschalten.
 ### Bedienung
 
 * **Frequenz**: Direkteingabe (z. B. `107.9` MHz) oder schrittweise mit
-  `◀`/`▶`. Jede eingestellte Frequenz ist ein Vielfaches der aktuellen
-  Schrittweite – auch nach Klick ins Spektrum. Die Siebensegment-Anzeige
-  hat eine feste Zellenbreite: Der Dezimalpunkt springt beim Wechseln
-  nicht, führende Zellen bleiben dunkel.
+  `◀`/`▶`.
 * **Schrittweite / Lautstärke / Band / Modus / Bandbreite / AGC/Attn**:
   je eine Zeile mit `◀`/`▶`-Buttons, der aktuelle Wert steht dazwischen.
   Die Lautstärke (0–63) wird als Schieberegler erst beim Loslassen
