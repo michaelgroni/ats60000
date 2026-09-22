@@ -1,4 +1,5 @@
 name: PWA auf GitHub Pages
+# Deployt web/ nach Pages; Environment github-pages erlaubt development.
 
 on:
   push:
