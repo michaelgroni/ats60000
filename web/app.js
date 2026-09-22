@@ -55,9 +55,17 @@ function drawFrequency(status) {
   const text = fm ? (hz / 1e6).toFixed(2) : (hz / 1e3).toFixed(3);
   const unit = fm ? "MHz" : "kHz";
   const sep = text.includes(",") ? "," : ".";
-  const [head, frac = ""] = text.split(sep);
-  // Fester Aufbau: fuenf Zellen vor dem Dezimalpunkt, fuehrende dunkel
-  const intDigits = head.padStart(SEG_INT_CELLS, "0");
+  const [rawHead, rawFrac = ""] = text.split(sep);
+  // Fester Aufbau: fuenf Zellen vor dem Dezimalpunkt, fuehrende dunkel.
+  // Ein manipulierter Status kann mehr Ziffern liefern als Zellen
+  // vorhanden sind; Ueberzaehliges wird abgeschnitten statt ueber den
+  // Canvas hinaus zu zeichnen.
+  let intDigits = rawHead.replace(/\D/g, "") || "0";
+  if (intDigits.length > SEG_INT_CELLS) {
+    intDigits = intDigits.slice(-SEG_INT_CELLS);
+  }
+  intDigits = intDigits.padStart(SEG_INT_CELLS, "0");
+  const frac = rawFrac.replace(/\D/g, "").slice(0, 3);
   const litLen = intDigits.replace(/^0+/, "").length || 1;
   const x0 = SEG_T + 1;
   let x = x0;
@@ -169,7 +177,12 @@ function setStateLabel(stateName) {
     stateName === "connected" ? "Trennen" : "Verbinden";
 }
 
+let connectBusy = false;
+
 async function connect() {
+  if (connectBusy) {
+    return;
+  }
   if (state.transport && state.transport.connected) {
     state.transport.disconnect();
     clearStatus();
@@ -180,6 +193,7 @@ async function connect() {
           "Auf iOS die Seite im Browser Bluefy \u00f6ffnen.");
     return;
   }
+  connectBusy = true;
   state.transport = new BleTransport((line) => onLine(line), setStateLabel);
   try {
     await state.transport.connect();
@@ -187,13 +201,15 @@ async function connect() {
     await state.transport.send(CMD.TOGGLE_LOG);
     appendLog("App", "Verbunden, Monitor aktiviert");
   } catch (err) {
-    if (err.name === "NotFoundError") {
+    if (err && err.name === "NotFoundError") {
       appendLog("App", "Kein Ger\u00e4t ausgew\u00e4hlt");
       setStateLabel("disconnected");
     } else {
-      appendLog("App", `Verbindung fehlgeschlagen: ${err.message}`);
+      appendLog("App", `Verbindung fehlgeschlagen: ${err && err.message}`);
       setStateLabel("disconnected");
     }
+  } finally {
+    connectBusy = false;
   }
 }
 

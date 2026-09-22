@@ -43,6 +43,24 @@ test("falsche Feldzahl und Muell werden abgelehnt", () => {
   assert.equal(parseStatus(undefined), null);
 });
 
+test("JavaScript-typische Zahlentrueke werden abgelehnt", () => {
+  // Leere Felder (Number('') === 0), Hex-, Exponenten- und
+  // Dezimalbruch-Schreibweisen in Ganzzahl-Feldern, Overflow
+  const over = (idx, value) => {
+    const fields = VALID_LINE.split(",");
+    fields[idx] = value;
+    return parseStatus(fields.join(","));
+  };
+  assert.equal(over(0, ""), null, "leeres Feld");
+  assert.equal(over(0, " 201 ").version, 201, "whitespace wie float()/int()");
+  assert.equal(over(0, "0x10"), null, "hex");
+  assert.equal(over(1, "1e2"), null, "exponent");
+  assert.equal(over(1, "3600.5"), null, "dezimalbruch");
+  assert.equal(over(1, "99999999999999999999"), null, "ueber safe integer");
+  assert.equal(over(13, "0x10"), null, "hex-spannung");
+  assert.equal(over(13, "1.5e1").voltage, 15, "exponent wie float()");
+});
+
 test("Manipulierte Werte werden abgelehnt (Grenzen der Firmware)", () => {
   const over = (idx, value) => {
     const fields = VALID_LINE.split(",");
@@ -93,8 +111,10 @@ test("Lautstaerke-Burst", () => {
   assert.equal(volumeBurst(10, 13), "VVV");
   assert.equal(volumeBurst(13, 10), "vvv");
   assert.equal(volumeBurst(5, 5), "");
-  assert.equal(volumeBurst(-1, 5), "");
-  assert.equal(volumeBurst(0, 64), "");
+  assert.equal(volumeBurst(-1, 5), "V".repeat(5), "clamp wie protocol.py");
+  assert.equal(volumeBurst(0, 64), "V".repeat(63), "clamp wie protocol.py");
+  assert.equal(volumeBurst(10, 1e9), "V".repeat(53), "clamp wie protocol.py");
+  assert.equal(volumeBurst(1e9, 0), "v".repeat(63), "clamp wie protocol.py");
 });
 
 test("S-Wert-Tabelle wie Firmware (AM- und FM-Skala)", () => {
@@ -116,7 +136,12 @@ test("Schrittweiten-Text in Hz", () => {
   assert.equal(stepHz("1M"), 1000000);
   assert.equal(stepHz("25"), 25);
   assert.equal(stepHz("muell"), 1000);
-  assert.equal(stepHz("", 500), 500);
+  assert.equal(stepHz("", 500), 500, "leerer text mit fallback");
+  assert.equal(stepHz(""), 1000, "leerer text");
+  assert.equal(stepHz("25abc"), 1000, "zahl mit muell-suffix");
+  assert.equal(stepHz("abc25"), 1000);
+  assert.equal(stepHz("0x10"), 1000, "hex");
+  assert.equal(stepHz("10 k"), 1000, "leerzeichen im text");
 });
 
 test("STATUS_FIELDS betraegt 15", () => {

@@ -90,15 +90,26 @@ export function parseStatus(line) {
       }
     }
   }
+  // Zahlenformate so streng wie int()/float() in protocol.py: Die
+  // JavaScript-Umwandlung akzeptiert sonst z. B. '', '0x10' oder '1e2'
+  // als ganze Zahl und wuerde Muellzeilen durchlassen.
+  const intRe = /^[+-]?\d+$/;
+  const floatRe = /^[+-]?(?:\d+(?:[.]\d*)?|[.]\d+)(?:[eE][+-]?\d+)?$/;
   const numbers = [IDX_VERSION, IDX_FREQUENCY, IDX_BFO, IDX_CAL, IDX_AGC,
                    IDX_VOLUME, IDX_RSSI, IDX_SNR, IDX_CAPACITOR, IDX_SEQNUM];
   const values = {};
   for (const idx of numbers) {
+    if (!intRe.test(fields[idx])) {
+      return null;
+    }
     const n = Number(fields[idx]);
-    if (!Number.isInteger(n)) {
+    if (!Number.isSafeInteger(n)) {
       return null;
     }
     values[idx] = n;
+  }
+  if (!floatRe.test(fields[IDX_VOLTAGE])) {
+    return null;
   }
   const voltage = Number(fields[IDX_VOLTAGE]);
   if (!Number.isFinite(voltage)) {
@@ -154,16 +165,22 @@ export function parseFloatText(text) {
 /** Schrittweiten-Text ('10k', '1M', '25') in Hz; robust gegen Muell. */
 export function stepHz(text, fallback = 1000) {
   const value = String(text).trim().toLowerCase();
+  // Strenges Zahlenformat wie _parse_step_or_step_size in protocol.py:
+  // parseInt/parseFloat akzeptieren sonst Muell wie '25abc' oder ''.
+  const match =
+    value.match(/^([+-]?(?:\d+(?:[.]\d*)?|[.]\d+)(?:[eE][+-]?\d+)?)([km]?)$/);
+  if (!match) return fallback;
   try {
+    const number = parseFloat(match[1]);
+    if (!Number.isFinite(number)) return fallback;
     let hz;
-    if (value.endsWith("m")) {
-      hz = Math.floor(parseFloat(value.slice(0, -1)) * 1000000);
-    } else if (value.endsWith("k")) {
-      hz = Math.floor(parseFloat(value.slice(0, -1)) * 1000);
+    if (match[2] === "m") {
+      hz = Math.floor(number * 1000000);
+    } else if (match[2] === "k") {
+      hz = Math.floor(number * 1000);
     } else {
-      hz = parseInt(value, 10);
+      hz = Math.floor(number);
     }
-    if (!Number.isFinite(hz)) return fallback;
     if (hz < 1 || hz > 100000000) return fallback;
     return hz;
   } catch {
@@ -226,15 +243,18 @@ export const CMD = {
   SCREENSHOT: "C",
 };
 
-/** Lautst\u00e4rke- Burst: 'V'/'v' so oft, dass von from nach to gewechselt wird. */
+/** Lautst\u00e4rke- Burst: 'V'/'v' so oft, dass von from nach to gewechselt wird.
+ * Beide Werte werden wie volume_burst in protocol.py auf 0..63 geklemmt,
+ * statt den Befehl ganz zu verwerfen. */
 export function volumeBurst(from, to) {
   if (!Number.isInteger(from) || !Number.isInteger(to)) return "";
-  if (from < 0 || to < 0 || from > VOLUME_MAX || to > VOLUME_MAX) return "";
-  if (to === from) return "";
-  if (to > from) {
-    return CMD.VOLUME_UP.repeat(to - from);
+  const lo = Math.max(0, Math.min(from, VOLUME_MAX));
+  const hi = Math.max(0, Math.min(to, VOLUME_MAX));
+  if (hi === lo) return "";
+  if (hi > lo) {
+    return CMD.VOLUME_UP.repeat(hi - lo);
   }
-  return CMD.VOLUME_DOWN.repeat(from - to);
+  return CMD.VOLUME_DOWN.repeat(lo - hi);
 }
 
 /**
