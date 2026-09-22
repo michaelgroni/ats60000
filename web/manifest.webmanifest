@@ -1,6 +1,6 @@
 {
-  "name": "ATS-Mini Fernbedienung",
-  "short_name": "ATS-Mini",
+  "name": "ATS-Mini Fernbedienung (Beta)",
+  "short_name": "ATS-Mini Beta",
   "description": "WLAN/Bluetooth-Fernbedienung für das ATS-Miniradio über das Ad-hoc-Protokoll",
   "start_url": ".",
   "display": "standalone",

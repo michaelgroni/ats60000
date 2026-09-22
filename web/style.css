@@ -25,6 +25,20 @@ header h1 {
   flex: 1 1 auto;
 }
 
+.beta {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 1em;
+  background: #c80;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 #state {
   font-size: 0.85rem;
   opacity: 0.8;

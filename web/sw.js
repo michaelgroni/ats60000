@@ -3,7 +3,7 @@
  * Netzwerkverbindung (Web Bluetooth) ist von Natur aus online-only.
  */
 
-const CACHE = "ats-mini-remote-v1";
+const CACHE = "ats-mini-remote-v1-beta";
 const ASSETS = [
   "./",
   "index.html",
