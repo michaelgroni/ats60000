@@ -1,9 +1,9 @@
 name: PWA auf GitHub Pages
-# Deployt web/ nach Pages; Environment github-pages erlaubt development.
+# Deploys web/ to Pages; github-pages environment allows main.
 
 on:
   push:
-    branches: [development]
+    branches: [main]
     paths: ['web/**', '.github/workflows/pages.yml']
   workflow_dispatch:
 
